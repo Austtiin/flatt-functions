@@ -30,7 +30,9 @@ jobs:
         shell: bash
         run: |
           pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
-          dotnet build --configuration Release --output ./output
+          dotnet restore
+          dotnet build --configuration Release --no-restore
+          dotnet publish --configuration Release --no-build --output ./output
           popd
       
       - name: 'Run Azure Functions Action'
@@ -41,3 +43,5 @@ jobs:
           slot-name: 'Production'
           package: '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_5B38BFBFB0914845B804A010991883CA }}
+          scm-do-build-during-deployment: false
+          enable-oryx-build: false
