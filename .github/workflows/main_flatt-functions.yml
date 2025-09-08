@@ -1,7 +1,4 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/azure/functions-action
-# More GitHub Actions for Azure: https://github.com/Azure/actions
-
-name: Build and deploy dotnet core project to Azure Function App - flatt-functions
+name: Build and deploy .NET 8 isolated Azure Function App - flatt-functions
 
 on:
   push:
@@ -10,37 +7,33 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: './flatt-functions' # set this to the path to your web app project, defaults to the repository root
-  DOTNET_VERSION: '8.0.x' # set this to the dotnet version to use
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: './flatt-functions'
+  DOTNET_VERSION: '8.0.x'
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     
     steps:
-      - name: 'Checkout GitHub Action'
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup DotNet ${{ env.DOTNET_VERSION }} Environment
-        uses: actions/setup-dotnet@v1
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: 'Resolve Project Dependencies Using Dotnet'
-        shell: bash
+      - name: Build and publish
         run: |
-          pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
+          pushd '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
           dotnet restore
           dotnet build --configuration Release --no-restore
           dotnet publish --configuration Release --no-build --output ./output
           popd
       
-      - name: 'Run Azure Functions Action'
-        uses: Azure/functions-action@v1
-        id: fa
+      - name: Deploy to Azure Functions
+        uses: Azure/functions-action@v1.5.0
         with:
           app-name: 'flatt-functions'
-          slot-name: 'Production'
-          package: '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output'
+          package: '${{ github.workspace }}/flatt-functions/output'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_5B38BFBFB0914845B804A010991883CA }}
-          
