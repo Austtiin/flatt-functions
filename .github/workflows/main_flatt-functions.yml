@@ -31,9 +31,10 @@ jobs:
           dotnet publish --configuration Release --no-build --output ./output
           popd
 
-      - name: Deploy to Azure Functions
+      - name: Deploy to Azure Function App
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'flatt-functions' # your Function App name
-          package: '${{ github.workspace }}/flatt-functions/output'
+          app-name: 'flatt-functions' # Function App name in Azure
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_5B38BFBFB0914845B804A010991883CA }}
+          package: '${{ github.workspace }}/flatt-functions/output'
+          type: zip
