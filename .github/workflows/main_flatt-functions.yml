@@ -31,15 +31,9 @@ jobs:
           dotnet publish --configuration Release --no-build --output ./output
           popd
 
-      - name: Zip published files
-        run: |
-          cd '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output'
-          zip -r ../output.zip .
-
-      - name: Deploy to Azure Function App
-        uses: azure/webapps-deploy@v3
+      - name: Deploy to Azure Functions
+        uses: Azure/functions-action@v1
         with:
           app-name: 'flatt-functions'
+          package: '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_5B38BFBFB0914845B804A010991883CA }}
-          package: '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output.zip'
-          type: zip
