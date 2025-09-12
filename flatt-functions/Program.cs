@@ -1,14 +1,35 @@
+#nullable enable
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Builder;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
+using Microsoft.EntityFrameworkCore;
+using flatt_functions.Data;
+using System;
 
-var builder = FunctionsApplication.CreateBuilder(args);
+namespace flatt_functions
+{
+    public class Program
+    {
+        public static void Main(string[] args)
+        {
+            var host = new HostBuilder()
+                .ConfigureFunctionsWorkerDefaults()
+                .ConfigureAppConfiguration(cfg =>
+                {
+                    cfg.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true);
+                    cfg.AddEnvironmentVariables();
+                })
+                .ConfigureServices((context, services) =>
+                {
+                    var cs = context.Configuration["SqlConnectionString"];
+                    services.AddDbContext<InventoryContext>(options => options.UseSqlServer(cs));
+                    services.AddApplicationInsightsTelemetryWorkerService();
+                    services.ConfigureFunctionsApplicationInsights();
+                })
+                .Build();
 
-builder.ConfigureFunctionsWebApplication();
-
-builder.Services
-    .AddApplicationInsightsTelemetryWorkerService()
-    .ConfigureFunctionsApplicationInsights();
-
-builder.Build().Run();
+            host.Run();
+        }
+    }
+}
