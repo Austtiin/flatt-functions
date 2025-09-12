@@ -15,6 +15,7 @@ namespace flatt_functions
         {
             var host = new HostBuilder()
                 .ConfigureFunctionsWorkerDefaults()
+                .ConfigureFunctionsWebApplication() // <-- Add this line
                 .ConfigureAppConfiguration(cfg =>
                 {
                     cfg.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true);
