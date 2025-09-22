@@ -15,13 +15,13 @@ using System.Diagnostics;
 
 namespace flatt_functions
 {
-    public class GrabInventory
+    public class GrabInventoryFH
     {
-        private readonly ILogger<GrabInventory> _logger;
+        private readonly ILogger<GrabInventoryFH> _logger;
         private readonly IConfiguration _configuration;
         private readonly string _connectionString;
 
-        public GrabInventory(ILogger<GrabInventory> logger, IConfiguration configuration)
+        public GrabInventoryFH(ILogger<GrabInventoryFH> logger, IConfiguration configuration)
         {
             _logger = logger;
             _configuration = configuration;
