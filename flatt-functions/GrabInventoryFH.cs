@@ -357,11 +357,36 @@ namespace flatt_functions
                 
                 // Sanitize table name to prevent SQL injection
                 var sanitizedTableName = tableName.Replace("[", "").Replace("]", "").Replace("'", "").Replace("\"", "");
-                var query = $"SELECT * FROM [{sanitizedTableName}]";
                 
-                _logger.LogInformation("📝 Executing query: {query}", query);
-                
+                // Check if TypeID column exists first
+                var columnCheckQuery = @"
+                    SELECT COUNT(*) 
+                    FROM INFORMATION_SCHEMA.COLUMNS 
+                    WHERE TABLE_NAME = @TableName AND COLUMN_NAME = 'TypeID'";
+        
+                using var columnCheckCmd = new SqlCommand(columnCheckQuery, connection);
+                columnCheckCmd.Parameters.AddWithValue("@TableName", sanitizedTableName);
+                var hasTypeIdColumn = (int)await columnCheckCmd.ExecuteScalarAsync() > 0;
+        
+                // Build query with or without TypeID filter
+                string query;
+                if (hasTypeIdColumn)
+                {
+                    query = $"SELECT * FROM [{sanitizedTableName}] WHERE TypeID = @TypeID";
+                    _logger.LogInformation("📝 Executing filtered query: {query} (TypeID = 1)", query);
+                }
+                else
+                {
+                    query = $"SELECT * FROM [{sanitizedTableName}]";
+                    _logger.LogWarning("⚠️ TypeID column not found in table '{tableName}', returning all records", tableName);
+                    _logger.LogInformation("📝 Executing query: {query}", query);
+                }
+        
                 using var command = new SqlCommand(query, connection);
+                if (hasTypeIdColumn)
+                {
+                    command.Parameters.AddWithValue("@TypeID", 1);
+                }
                 command.CommandTimeout = 30; // 30 second timeout
                 using var reader = await command.ExecuteReaderAsync();
                 
@@ -406,8 +431,9 @@ namespace flatt_functions
                 }
                 else
                 {
-                    _logger.LogInformation("✅ Successfully retrieved {count} records from {tableName} in {ms}ms", 
-                        results.Count, tableName, timer.ElapsedMilliseconds);
+                    var filterMessage = hasTypeIdColumn ? " (filtered by TypeID = 1)" : "";
+                    _logger.LogInformation("✅ Successfully retrieved {count} records from {tableName} in {ms}ms{filter}", 
+                        results.Count, tableName, timer.ElapsedMilliseconds, filterMessage);
                 }
                 
                 return results;
