@@ -27,10 +27,16 @@ namespace flatt_functions
             _configuration = configuration;
             
             // Enhanced connection string debugging
-            var connectionString = configuration["SqlConnectionString"];
+            // Try different ways to get the connection string
+            var connectionString = configuration["SqlConnectionString"] ?? 
+                                  configuration.GetConnectionString("SqlConnectionString") ??
+                                  configuration["ConnectionStrings:SqlConnectionString"];
+            
             if (string.IsNullOrEmpty(connectionString))
             {
                 _logger.LogError("SqlConnectionString is null or empty in configuration");
+                _logger.LogError("Available configuration keys: {keys}", 
+                    string.Join(", ", configuration.AsEnumerable().Select(x => x.Key)));
                 throw new InvalidOperationException("SqlConnectionString not set in configuration.");
             }
             
