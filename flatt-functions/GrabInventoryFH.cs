@@ -50,7 +50,7 @@ namespace flatt_functions
             _connectionString = connectionString;
         }
 
-        [Function("GrabInventory")]
+        [Function("GrabInventoryFH")]
         public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Anonymous, "get")] HttpRequestData req)
         {
             var stopwatch = Stopwatch.StartNew();
@@ -503,11 +503,11 @@ namespace flatt_functions
         <div class='api-info'>
             <h2>🔗 API Usage</h2>
             <ul>
-                <li><strong>Default (Units):</strong> <code>/api/GrabInventory</code></li>
-                <li><strong>Specific Table:</strong> <code>/api/GrabInventory?table=TableName</code></li>
-                <li><strong>With Schema:</strong> <code>/api/GrabInventory?schema=true</code></li>
-                <li><strong>HTML Format:</strong> <code>/api/GrabInventory?format=html</code></li>
-                <li><strong>Debug Mode:</strong> <code>/api/GrabInventory?schema=true&format=html</code></li>
+                <li><strong>Default (Units):</strong> <code>/api/GrabInventoryFH</code></li>
+                <li><strong>Specific Table:</strong> <code>/api/GrabInventoryFH?table=TableName</code></li>
+                <li><strong>With Schema:</strong> <code>/api/GrabInventoryFH?schema=true</code></li>
+                <li><strong>HTML Format:</strong> <code>/api/GrabInventoryFH?format=html</code></li>
+                <li><strong>Debug Mode:</strong> <code>/api/GrabInventoryFH?schema=true&format=html</code></li>
             </ul>
         </div>
         
