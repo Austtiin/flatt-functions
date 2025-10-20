@@ -12,6 +12,9 @@ var host = new HostBuilder()
         
         // Add configuration
         services.AddSingleton<IConfiguration>(context.Configuration);
+        
+        // Add HttpClient for Azure API calls
+        services.AddHttpClient();
     })
     .Build();
 
