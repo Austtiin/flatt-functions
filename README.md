@@ -102,7 +102,7 @@ Host: localhost:7071
     "year": 2024,
     "condition": "New",
     "description": null,
-    "thumbnailURL": null,
+    
     "category": "RV",
     "typeID": 1,
     "widthCategory": "8",
@@ -253,7 +253,7 @@ Host: localhost:7071
 - `widthCategory` (string) - Width dimension
 - `sizeCategory` (string) - Size dimension
 - `description` (string) - Detailed description
-- `thumbnailURL` (string) - Image URL
+- 
 
 **Request:**
 ```http
@@ -367,7 +367,7 @@ Content-Type: application/json
   "widthCategory": "8",
   "sizeCategory": "21",
   "description": "Updated description",
-  "thumbnailURL": "https://example.com/image.jpg"
+  
 }
 ```
 
@@ -661,7 +661,7 @@ Host: localhost:7071
   Year: number;             // Year of manufacture
   Condition?: string;       // "New", "Used", etc.
   Description?: string;     // Long text description
-  ThumbnailURL?: string;    // Image URL
+  
   Category?: string;        // Category classification
   TypeID: number;           // 1=Fish House, 2=Vehicle, 3=Trailer
   WidthCategory?: string;   // Width dimension

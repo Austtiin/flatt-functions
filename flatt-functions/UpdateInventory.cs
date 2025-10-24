@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
@@ -115,7 +116,8 @@ namespace flatt_functions
                 
                 var updateData = JsonSerializer.Deserialize<UpdateVehicleRequest>(requestBody, new JsonSerializerOptions
                 {
-                    PropertyNameCaseInsensitive = true
+                    PropertyNameCaseInsensitive = true,
+                    NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString
                 });
                 
                 if (updateData == null)
@@ -134,6 +136,17 @@ namespace flatt_functions
                     return response;
                 }
                 
+                // Normalize VIN and StockNo to uppercase
+                if (!string.IsNullOrWhiteSpace(updateData.Vin))
+                {
+                    updateData.Vin = updateData.Vin.ToUpper().Trim();
+                }
+                
+                if (!string.IsNullOrWhiteSpace(updateData.StockNo))
+                {
+                    updateData.StockNo = updateData.StockNo.ToUpper().Trim();
+                }
+
                 // Validate required fields if provided
                 var validationErrors = ValidateUpdateData(updateData);
                 if (validationErrors.Any())
@@ -261,7 +274,8 @@ namespace flatt_functions
             using var command = new SqlCommand(query, connection);
             command.Parameters.AddWithValue("@UnitID", unitId);
             
-            var count = (int)await command.ExecuteScalarAsync();
+            var result = await command.ExecuteScalarAsync();
+            var count = result != null ? (int)result : 0;
             return count > 0;
         }
 
@@ -275,7 +289,8 @@ namespace flatt_functions
             command.Parameters.AddWithValue("@VIN", vin);
             command.Parameters.AddWithValue("@UnitID", unitId);
             
-            var count = (int)await command.ExecuteScalarAsync();
+            var result = await command.ExecuteScalarAsync();
+            var count = result != null ? (int)result : 0;
             return count > 0;
         }
 
@@ -289,7 +304,8 @@ namespace flatt_functions
             command.Parameters.AddWithValue("@StockNo", stockNo);
             command.Parameters.AddWithValue("@UnitID", unitId);
             
-            var count = (int)await command.ExecuteScalarAsync();
+            var result = await command.ExecuteScalarAsync();
+            var count = result != null ? (int)result : 0;
             return count > 0;
         }
 
@@ -308,13 +324,13 @@ namespace flatt_functions
                     [Year] = COALESCE(@Year, [Year]),
                     [Condition] = COALESCE(@Condition, [Condition]),
                     [Description] = COALESCE(@Description, [Description]),
-                    [ThumbnailURL] = COALESCE(@ThumbnailURL, [ThumbnailURL]),
                     [Category] = COALESCE(@Category, [Category]),
                     [TypeID] = COALESCE(@TypeID, [TypeID]),
                     [WidthCategory] = COALESCE(@WidthCategory, [WidthCategory]),
                     [SizeCategory] = COALESCE(@SizeCategory, [SizeCategory]),
                     [Price] = COALESCE(@Price, [Price]),
                     [Status] = COALESCE(@Status, [Status]),
+                    [Color] = COALESCE(@Color, [Color]),
                     [UpdatedAt] = GETDATE()
                 WHERE [UnitID] = @UnitID";
             
@@ -327,13 +343,13 @@ namespace flatt_functions
             command.Parameters.AddWithValue("@Year", (object?)vehicle.Year ?? DBNull.Value);
             command.Parameters.AddWithValue("@Condition", (object?)vehicle.Condition ?? DBNull.Value);
             command.Parameters.AddWithValue("@Description", (object?)vehicle.Description ?? DBNull.Value);
-            command.Parameters.AddWithValue("@ThumbnailURL", (object?)vehicle.ThumbnailURL ?? DBNull.Value);
             command.Parameters.AddWithValue("@Category", (object?)vehicle.Category ?? DBNull.Value);
             command.Parameters.AddWithValue("@TypeID", (object?)vehicle.TypeId ?? DBNull.Value);
             command.Parameters.AddWithValue("@WidthCategory", (object?)vehicle.WidthCategory ?? DBNull.Value);
             command.Parameters.AddWithValue("@SizeCategory", (object?)vehicle.SizeCategory ?? DBNull.Value);
             command.Parameters.AddWithValue("@Price", (object?)vehicle.Price ?? DBNull.Value);
             command.Parameters.AddWithValue("@Status", (object?)vehicle.Status ?? DBNull.Value);
+            command.Parameters.AddWithValue("@Color", (object?)vehicle.Color ?? DBNull.Value);
             
             await command.ExecuteNonQueryAsync();
         }
@@ -342,18 +358,27 @@ namespace flatt_functions
     public class UpdateVehicleRequest
     {
         public string? Vin { get; set; }
+        
+        [JsonConverter(typeof(FlexibleIntConverter))]
         public int? Year { get; set; }
+        
         public string? Make { get; set; }
         public string? Model { get; set; }
         public string? StockNo { get; set; }
         public string? Condition { get; set; }
         public string? Category { get; set; }
+        
+        [JsonConverter(typeof(FlexibleIntConverter))]
         public int? TypeId { get; set; }
+        
         public string? WidthCategory { get; set; }
         public string? SizeCategory { get; set; }
+        
+        [JsonConverter(typeof(FlexibleDecimalConverter))]
         public decimal? Price { get; set; }
+        
         public string? Status { get; set; }
         public string? Description { get; set; }
-        public string? ThumbnailURL { get; set; }
+        public string? Color { get; set; }
     }
 }

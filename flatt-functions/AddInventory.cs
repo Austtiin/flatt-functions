@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
@@ -78,7 +79,8 @@ namespace flatt_functions
                 
                 var newVehicle = JsonSerializer.Deserialize<AddVehicleRequest>(requestBody, new JsonSerializerOptions
                 {
-                    PropertyNameCaseInsensitive = true
+                    PropertyNameCaseInsensitive = true,
+                    NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowReadingFromString
                 });
                 
                 if (newVehicle == null)
@@ -97,6 +99,17 @@ namespace flatt_functions
                     return response;
                 }
                 
+                // Normalize VIN and StockNo to uppercase
+                if (!string.IsNullOrWhiteSpace(newVehicle.Vin))
+                {
+                    newVehicle.Vin = newVehicle.Vin.ToUpper().Trim();
+                }
+                
+                if (!string.IsNullOrWhiteSpace(newVehicle.StockNo))
+                {
+                    newVehicle.StockNo = newVehicle.StockNo.ToUpper().Trim();
+                }
+
                 // Validate required fields
                 var validationErrors = ValidateVehicle(newVehicle);
                 if (validationErrors.Any())
@@ -162,8 +175,8 @@ namespace flatt_functions
                 
                 stopwatch.Stop();
                 
-                _logger.LogInformation("✅ Vehicle added successfully - UnitID: {unitId}, VIN: {vin}, StockNo: {stockNo}", 
-                    newUnitId, newVehicle.Vin, newVehicle.StockNo);
+                _logger.LogInformation("✅ Vehicle added successfully - UnitID: {unitId}, VIN: {vin}, StockNo: {stockNo}, Color: {color}", 
+                    newUnitId, newVehicle.Vin, newVehicle.StockNo, newVehicle.Color);
                 
                 response.StatusCode = HttpStatusCode.Created;
                 response.Headers.Add("Content-Type", "application/json; charset=utf-8");
@@ -176,6 +189,7 @@ namespace flatt_functions
                     UnitId = newUnitId,
                     Vin = newVehicle.Vin,
                     StockNo = newVehicle.StockNo,
+                    Color = newVehicle.Color,
                     ResponseTimeMs = stopwatch.ElapsedMilliseconds,
                     Timestamp = DateTime.UtcNow
                 }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true }));
@@ -228,6 +242,9 @@ namespace flatt_functions
             if (string.IsNullOrWhiteSpace(vehicle.Status))
                 errors.Add("Status is required");
             
+            if (string.IsNullOrWhiteSpace(vehicle.Color))
+                errors.Add("Color is required");
+            
             return errors;
         }
 
@@ -240,7 +257,8 @@ namespace flatt_functions
             using var command = new SqlCommand(query, connection);
             command.Parameters.AddWithValue("@VIN", vin);
             
-            var count = (int)await command.ExecuteScalarAsync();
+            var result = await command.ExecuteScalarAsync();
+            var count = result != null ? (int)result : 0;
             return count > 0;
         }
 
@@ -253,7 +271,8 @@ namespace flatt_functions
             using var command = new SqlCommand(query, connection);
             command.Parameters.AddWithValue("@StockNo", stockNo);
             
-            var count = (int)await command.ExecuteScalarAsync();
+            var result = await command.ExecuteScalarAsync();
+            var count = result != null ? (int)result : 0;
             return count > 0;
         }
 
@@ -265,14 +284,14 @@ namespace flatt_functions
             var query = @"
                 INSERT INTO [Units] (
                     [VIN], [StockNo], [Make], [Model], [Year], [Condition], 
-                    [Description], [ThumbnailURL], [Category], [TypeID], 
-                    [WidthCategory], [SizeCategory], [Price], [Status]
+                    [Description], [Category], [TypeID], 
+                    [WidthCategory], [SizeCategory], [Price], [Status], [Color]
                 )
                 OUTPUT INSERTED.UnitID
                 VALUES (
                     @VIN, @StockNo, @Make, @Model, @Year, @Condition, 
-                    @Description, @ThumbnailURL, @Category, @TypeID, 
-                    @WidthCategory, @SizeCategory, @Price, @Status
+                    @Description, @Category, @TypeID, 
+                    @WidthCategory, @SizeCategory, @Price, @Status, @Color
                 )";
             
             using var command = new SqlCommand(query, connection);
@@ -283,34 +302,108 @@ namespace flatt_functions
             command.Parameters.AddWithValue("@Year", vehicle.Year!);
             command.Parameters.AddWithValue("@Condition", (object?)vehicle.Condition ?? DBNull.Value);
             command.Parameters.AddWithValue("@Description", (object?)vehicle.Description ?? DBNull.Value);
-            command.Parameters.AddWithValue("@ThumbnailURL", (object?)vehicle.ThumbnailURL ?? DBNull.Value);
+            
             command.Parameters.AddWithValue("@Category", (object?)vehicle.Category ?? DBNull.Value);
             command.Parameters.AddWithValue("@TypeID", vehicle.TypeId!);
             command.Parameters.AddWithValue("@WidthCategory", (object?)vehicle.WidthCategory ?? DBNull.Value);
             command.Parameters.AddWithValue("@SizeCategory", (object?)vehicle.SizeCategory ?? DBNull.Value);
             command.Parameters.AddWithValue("@Price", vehicle.Price!);
             command.Parameters.AddWithValue("@Status", vehicle.Status!);
+            command.Parameters.AddWithValue("@Color", vehicle.Color!);
             
             var newId = await command.ExecuteScalarAsync();
-            return (int)newId;
+            return newId != null ? (int)newId : 0;
         }
     }
 
     public class AddVehicleRequest
     {
         public string? Vin { get; set; }
+        
+        [JsonConverter(typeof(FlexibleIntConverter))]
         public int? Year { get; set; }
+        
         public string? Make { get; set; }
         public string? Model { get; set; }
         public string? StockNo { get; set; }
         public string? Condition { get; set; }
         public string? Category { get; set; }
+        
+        [JsonConverter(typeof(FlexibleIntConverter))]
         public int? TypeId { get; set; }
+        
         public string? WidthCategory { get; set; }
         public string? SizeCategory { get; set; }
+        
+        [JsonConverter(typeof(FlexibleDecimalConverter))]
         public decimal? Price { get; set; }
+        
         public string? Status { get; set; }
         public string? Description { get; set; }
-        public string? ThumbnailURL { get; set; }
+        public string? Color { get; set; }
+    }
+
+    public class FlexibleIntConverter : JsonConverter<int?>
+    {
+        public override int? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType == JsonTokenType.Null)
+                return null;
+            
+            if (reader.TokenType == JsonTokenType.Number)
+                return reader.GetInt32();
+            
+            if (reader.TokenType == JsonTokenType.String)
+            {
+                var stringValue = reader.GetString();
+                if (string.IsNullOrEmpty(stringValue))
+                    return null;
+                
+                if (int.TryParse(stringValue, out int result))
+                    return result;
+            }
+            
+            throw new JsonException($"Unable to convert '{reader.GetString()}' to integer");
+        }
+
+        public override void Write(Utf8JsonWriter writer, int? value, JsonSerializerOptions options)
+        {
+            if (value == null)
+                writer.WriteNullValue();
+            else
+                writer.WriteNumberValue(value.Value);
+        }
+    }
+
+    public class FlexibleDecimalConverter : JsonConverter<decimal?>
+    {
+        public override decimal? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType == JsonTokenType.Null)
+                return null;
+            
+            if (reader.TokenType == JsonTokenType.Number)
+                return reader.GetDecimal();
+            
+            if (reader.TokenType == JsonTokenType.String)
+            {
+                var stringValue = reader.GetString();
+                if (string.IsNullOrEmpty(stringValue))
+                    return null;
+                
+                if (decimal.TryParse(stringValue, out decimal result))
+                    return result;
+            }
+            
+            throw new JsonException($"Unable to convert '{reader.GetString()}' to decimal");
+        }
+
+        public override void Write(Utf8JsonWriter writer, decimal? value, JsonSerializerOptions options)
+        {
+            if (value == null)
+                writer.WriteNullValue();
+            else
+                writer.WriteNumberValue(value.Value);
+        }
     }
 }
