@@ -577,6 +577,51 @@ This document provides a comprehensive list of all API endpoints with expected i
 
 ---
 
+## Vehicle Deletion Endpoint
+
+### 14. Delete Vehicle
+**Purpose:** Permanently delete a vehicle from inventory by UnitID
+
+**Endpoint:**
+- `DELETE /vehicles/delete/{id}`
+- Also available for convenience/testing: `GET /vehicles/delete/{id}` (performs the same delete)
+
+**Path Parameters:**
+- `id` (required): UnitID of the vehicle (integer)
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "message": "Vehicle deleted successfully",
+  "unitId": 145,
+  "responseTimeMs": 42,
+  "timestamp": "2025-10-24T10:30:00Z"
+}
+```
+
+**Error Response (Not Found):**
+```json
+{
+  "error": true,
+  "message": "Vehicle with UnitID 999 not found",
+  "statusCode": 404
+}
+```
+
+**Error Response (Invalid ID):**
+```json
+{
+  "error": true,
+  "message": "Invalid UnitID format. Must be a number.",
+  "statusCode": 400
+}
+```
+
+> Note: This operation is destructive. Consider purging related CDN entries after deletion if the item was publicly listed.
+
+---
+
 ## Common Response Patterns
 
 ### CORS Headers
