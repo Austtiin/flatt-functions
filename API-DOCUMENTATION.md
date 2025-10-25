@@ -13,6 +13,8 @@ This document provides a comprehensive list of all API endpoints with expected i
 4. [Validation Endpoints](#validation-endpoints)
 5. [Dashboard & Reports Endpoints](#dashboard--reports-endpoints)
 6. [CDN Management Endpoints](#cdn-management-endpoints)
+7. [Reference Data Endpoints](#reference-data-endpoints)
+8. [Unit Features Endpoints](#unit-features-endpoints)
 
 ---
 
@@ -195,6 +197,7 @@ This document provides a comprehensive list of all API endpoints with expected i
   "model": "Camry",
   "vin": "4T1B11HK5PU123456",
   "price": 28000.00,
+  "msrp": 31000.00,
   "status": "available",
   "mileage": 15000,
   "color": "Silver",
@@ -240,7 +243,8 @@ This document provides a comprehensive list of all API endpoints with expected i
   "validationErrors": [
     "StockNo is required",
     "VIN is required",
-    "Price must be greater than 0"
+    "Price must be greater than 0",
+    "MSRP must be 0 or greater"
   ],
   "statusCode": 400
 }
@@ -269,6 +273,7 @@ This document provides a comprehensive list of all API endpoints with expected i
 ```json
 {
   "price": 27000.00,
+  "msrp": 30500.00,
   "mileage": 16500,
   "status": "pending",
   "description": "Updated description"
@@ -622,6 +627,44 @@ This document provides a comprehensive list of all API endpoints with expected i
 
 ---
 
+## Reference Data Endpoints
+
+### 15. Get Features
+**Purpose:** Retrieve all available features from the `dbo.FeatureList` lookup table
+
+**Endpoint:** `GET /features`
+
+**Input:** None
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "featureId": 1,
+      "name": "Heated Seats",
+      "category": "Comfort",
+      "isActive": true
+    },
+    {
+      "featureId": 2,
+      "name": "Bluetooth",
+      "category": "Audio",
+      "isActive": true
+    }
+  ],
+  "count": 2,
+  "responseTimeMs": 42,
+  "timestamp": "2025-10-20T10:30:00Z"
+}
+```
+
+Notes:
+- The response dynamically includes all columns from `dbo.FeatureList`.
+- CORS headers are included as with other endpoints.
+
+
 ## Common Response Patterns
 
 ### CORS Headers
@@ -650,6 +693,127 @@ Access-Control-Allow-Headers: Content-Type
 - `500 Internal Server Error` - Server-side error
 
 ---
+
+## Unit Features Endpoints
+
+### 16. Get Features For Unit
+**Purpose:** Retrieve all feature mappings attached to the specified unit
+
+**Endpoint:** `GET /units/{id}/features`
+
+**Path Parameters:**
+- `id` (required): UnitID (integer)
+
+**Input:** None
+
+**Response:**
+```json
+[
+  {
+    "unitId": 145,
+    "featureId": 2,
+    "name": "Bluetooth",
+    "category": "Audio",
+    "isActive": true
+  }
+]
+```
+
+Notes:
+- The response dynamically includes all columns from `dbo.UnitFeatures` (and any joins if added in the future). Currently it returns the raw mapping rows from `UnitFeatures`.
+
+**Error Response (Invalid ID):**
+```json
+{
+  "error": true,
+  "message": "Invalid UnitID format. Must be a positive number.",
+  "statusCode": 400
+}
+```
+
+### 17. Get All Unit Features
+**Purpose:** Retrieve the entire `dbo.UnitFeatures` table
+
+**Endpoint:** `GET /unit-features`
+
+**Input:** None
+
+**Response:**
+```json
+[
+  {
+    "unitId": 145,
+    "featureId": 1
+  },
+  {
+    "unitId": 146,
+    "featureId": 3
+  }
+]
+```
+
+Notes:
+- The response dynamically includes all columns from `dbo.UnitFeatures`.
+- CORS headers are included as with other endpoints.
+
+### 18. Update Unit Features (Replace)
+**Purpose:** Replace all features for a given unit. Deletes any existing rows in `dbo.UnitFeatures` for the unit and inserts the provided FeatureIDs.
+
+**Endpoint:** `PUT /units/{id}/features`
+
+**Path Parameters:**
+- `id` (required): UnitID (integer)
+
+**Request Body:**
+You can send either an object with `featureIds` or a raw array.
+
+Option A (recommended):
+```json
+{
+  "featureIds": [1, 4, 7]
+}
+```
+
+Option B (raw array):
+```json
+[1, 4, 7]
+```
+
+Behavior:
+- If the list is empty (`[]`), all existing features for the unit are removed.
+- Duplicate or non-positive FeatureIDs are ignored (the list is de-duplicated and filtered to positive integers).
+- Operation runs in a single transaction: delete existing then insert new rows.
+
+**Success Response:**
+```json
+{
+  "success": true,
+  "message": "Unit features updated successfully",
+  "unitId": 145,
+  "deletedCount": 3,
+  "insertedCount": 3,
+  "featureIds": [1, 4, 7]
+}
+```
+
+**Error Response (Invalid ID):**
+```json
+{
+  "error": true,
+  "message": "Invalid UnitID format. Must be a positive number.",
+  "statusCode": 400
+}
+```
+
+**Error Response (Not Found):**
+```json
+{
+  "error": true,
+  "message": "Vehicle with UnitID 999 not found",
+  "statusCode": 404
+}
+```
+
 
 ## Bot Implementation Examples
 
@@ -764,6 +928,7 @@ interface Vehicle {
   model: string;
   vin: string;
   price: number; // decimal
+  msrp?: number; // decimal (optional)
   status: 'available' | 'pending' | 'sold' | 'reserved' | 'maintenance';
   mileage?: number;
   color?: string;

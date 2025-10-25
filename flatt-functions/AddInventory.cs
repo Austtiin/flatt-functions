@@ -177,6 +177,36 @@ namespace flatt_functions
                 
                 _logger.LogInformation("✅ Vehicle added successfully - UnitID: {unitId}, VIN: {vin}, StockNo: {stockNo}, Color: {color}", 
                     newUnitId, newVehicle.Vin, newVehicle.StockNo, newVehicle.Color);
+
+                // Log all fields that were added for traceability
+                var addedDetails = new
+                {
+                    UnitId = newUnitId,
+                    Vin = newVehicle.Vin,
+                    StockNo = newVehicle.StockNo,
+                    Make = newVehicle.Make,
+                    Model = newVehicle.Model,
+                    Year = newVehicle.Year,
+                    Condition = newVehicle.Condition,
+                    Description = newVehicle.Description,
+                    Category = newVehicle.Category,
+                    TypeId = newVehicle.TypeId,
+                    WidthCategory = newVehicle.WidthCategory,
+                    SizeCategory = newVehicle.SizeCategory,
+                    Price = newVehicle.Price,
+                    Msrp = newVehicle.Msrp,
+                    Status = newVehicle.Status,
+                    Color = newVehicle.Color
+                };
+
+                var logJsonOptions = new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    WriteIndented = false,
+                    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never
+                };
+                var addedDetailsJson = JsonSerializer.Serialize(addedDetails, logJsonOptions);
+                _logger.LogInformation("🧾 Added vehicle details: {json}", addedDetailsJson);
                 
                 response.StatusCode = HttpStatusCode.Created;
                 response.Headers.Add("Content-Type", "application/json; charset=utf-8");
@@ -239,6 +269,9 @@ namespace flatt_functions
             if (vehicle.Price == null || vehicle.Price < 0)
                 errors.Add("Price must be a positive number");
             
+            if (vehicle.Msrp != null && vehicle.Msrp < 0)
+                errors.Add("MSRP must be a positive number if provided");
+            
             if (string.IsNullOrWhiteSpace(vehicle.Status))
                 errors.Add("Status is required");
             
@@ -285,13 +318,13 @@ namespace flatt_functions
                 INSERT INTO [Units] (
                     [VIN], [StockNo], [Make], [Model], [Year], [Condition], 
                     [Description], [Category], [TypeID], 
-                    [WidthCategory], [SizeCategory], [Price], [Status], [Color]
+                    [WidthCategory], [SizeCategory], [Price], [Status], [Color], [MSRP]
                 )
                 OUTPUT INSERTED.UnitID
                 VALUES (
                     @VIN, @StockNo, @Make, @Model, @Year, @Condition, 
                     @Description, @Category, @TypeID, 
-                    @WidthCategory, @SizeCategory, @Price, @Status, @Color
+                    @WidthCategory, @SizeCategory, @Price, @Status, @Color, @MSRP
                 )";
             
             using var command = new SqlCommand(query, connection);
@@ -310,6 +343,7 @@ namespace flatt_functions
             command.Parameters.AddWithValue("@Price", vehicle.Price!);
             command.Parameters.AddWithValue("@Status", vehicle.Status!);
             command.Parameters.AddWithValue("@Color", vehicle.Color!);
+            command.Parameters.AddWithValue("@MSRP", (object?)vehicle.Msrp ?? DBNull.Value);
             
             var newId = await command.ExecuteScalarAsync();
             return newId != null ? (int)newId : 0;
@@ -337,6 +371,9 @@ namespace flatt_functions
         
         [JsonConverter(typeof(FlexibleDecimalConverter))]
         public decimal? Price { get; set; }
+        
+    [JsonConverter(typeof(FlexibleDecimalConverter))]
+    public decimal? Msrp { get; set; }
         
         public string? Status { get; set; }
         public string? Description { get; set; }

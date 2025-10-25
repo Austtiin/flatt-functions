@@ -261,6 +261,9 @@ namespace flatt_functions
             
             if (vehicle.Price != null && vehicle.Price < 0)
                 errors.Add("Price must be a positive number");
+
+            if (vehicle.Msrp != null && vehicle.Msrp < 0)
+                errors.Add("MSRP must be a positive number");
             
             return errors;
         }
@@ -329,6 +332,7 @@ namespace flatt_functions
                     [WidthCategory] = COALESCE(@WidthCategory, [WidthCategory]),
                     [SizeCategory] = COALESCE(@SizeCategory, [SizeCategory]),
                     [Price] = COALESCE(@Price, [Price]),
+                    [MSRP] = COALESCE(@MSRP, [MSRP]),
                     [Status] = COALESCE(@Status, [Status]),
                     [Color] = COALESCE(@Color, [Color]),
                     [UpdatedAt] = GETDATE()
@@ -348,6 +352,7 @@ namespace flatt_functions
             command.Parameters.AddWithValue("@WidthCategory", (object?)vehicle.WidthCategory ?? DBNull.Value);
             command.Parameters.AddWithValue("@SizeCategory", (object?)vehicle.SizeCategory ?? DBNull.Value);
             command.Parameters.AddWithValue("@Price", (object?)vehicle.Price ?? DBNull.Value);
+            command.Parameters.AddWithValue("@MSRP", (object?)vehicle.Msrp ?? DBNull.Value);
             command.Parameters.AddWithValue("@Status", (object?)vehicle.Status ?? DBNull.Value);
             command.Parameters.AddWithValue("@Color", (object?)vehicle.Color ?? DBNull.Value);
             
@@ -374,8 +379,11 @@ namespace flatt_functions
         public string? WidthCategory { get; set; }
         public string? SizeCategory { get; set; }
         
-        [JsonConverter(typeof(FlexibleDecimalConverter))]
-        public decimal? Price { get; set; }
+    [JsonConverter(typeof(FlexibleDecimalConverter))]
+    public decimal? Price { get; set; }
+        
+    [JsonConverter(typeof(FlexibleDecimalConverter))]
+    public decimal? Msrp { get; set; }
         
         public string? Status { get; set; }
         public string? Description { get; set; }
