@@ -11,6 +11,9 @@ using System;
 using Microsoft.Data.SqlClient;
 using System.Diagnostics;
 using System.IO;
+using Azure.Storage.Blobs;
+using Azure;
+using Azure.Identity;
 
 namespace flatt_functions
 {
@@ -148,6 +151,9 @@ namespace flatt_functions
                     return response;
                 }
                 
+                // After confirming VIN availability, create a VIN folder in blob storage (best-effort)
+                await TryCreateVinFolderAsync(newVehicle.Vin!);
+                
                 // Check if StockNo already exists (if provided)
                 if (!string.IsNullOrWhiteSpace(newVehicle.StockNo))
                 {
@@ -246,6 +252,130 @@ namespace flatt_functions
                 return response;
             }
         }
+
+        // replaced older TryCreateVinFolderAsync implementation with ResolveContainerClient-based version below
+            private async Task TryCreateVinFolderAsync(string vin)
+            {
+                try
+                {
+                    var containerClient = ResolveContainerClient();
+                    if (containerClient == null)
+                    {
+                        _logger.LogWarning("Blob storage not configured. Skipping VIN folder creation for {vin}", vin);
+                        return;
+                    }
+
+                    // Ensure container exists (best-effort)
+                    try { await containerClient.CreateIfNotExistsAsync(); } catch { /* ignore */ }
+
+                    // Create a placeholder blob to represent the folder under the base prefix (e.g., units/)
+                    var basePrefix = GetBlobPathPrefix();
+                    var blobClient = containerClient.GetBlobClient($"{basePrefix}{vin}/.init");
+                    if (!await blobClient.ExistsAsync())
+                    {
+                        using var stream = new MemoryStream(Array.Empty<byte>());
+                        await blobClient.UploadAsync(stream);
+                        _logger.LogInformation("Created VIN folder placeholder at {path} (prefix: '{prefix}')", blobClient.Uri, basePrefix);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to create VIN folder for {vin}. Continuing without blocking.", vin);
+                }
+            }
+
+            private BlobContainerClient? ResolveContainerClient()
+            {
+                // Prefer connection string if available (DEV)
+                var connString =
+                    _configuration["BlobConnectionString"] ??
+                    _configuration.GetConnectionString("BlobConnectionString") ??
+                    _configuration["ConnectionStrings:BlobConnectionString"];
+
+                var baseUrl =
+                    _configuration["BlobBaseURL"] ??
+                    _configuration["Blob_URL"] ??
+                    _configuration.GetConnectionString("BlobBaseURL") ??
+                    _configuration.GetConnectionString("Blob_URL") ??
+                    _configuration["ConnectionStrings:BlobBaseURL"] ??
+                    _configuration["ConnectionStrings:Blob_URL"];
+
+                if (!string.IsNullOrWhiteSpace(connString))
+                {
+                    // Derive container name from base URL if possible, else from explicit setting
+                    var containerName = ExtractContainerName(baseUrl) ??
+                                        _configuration["BlobContainerName"] ??
+                                        _configuration.GetConnectionString("BlobContainerName") ??
+                                        _configuration["ConnectionStrings:BlobContainerName"];
+                    if (!string.IsNullOrWhiteSpace(containerName))
+                    {
+                        return new BlobContainerClient(connString!, containerName!);
+                    }
+                    // Fall back to service URL if baseUrl present
+                }
+
+                if (!string.IsNullOrWhiteSpace(baseUrl))
+                {
+                    // Use managed identity/DefaultAzureCredential
+                    return new BlobContainerClient(new Uri(baseUrl!), new DefaultAzureCredential());
+                }
+
+                return null;
+            }
+
+            private string GetBlobPathPrefix()
+            {
+                // 1. Allow explicit override via configuration
+                var explicitPrefix =
+                    _configuration["BlobPathPrefix"] ??
+                    _configuration.GetConnectionString("BlobPathPrefix") ??
+                    _configuration["ConnectionStrings:BlobPathPrefix"];
+                if (!string.IsNullOrWhiteSpace(explicitPrefix))
+                {
+                    var prefix = explicitPrefix!.Trim().Trim('/') + "/";
+                    return prefix == "/" ? string.Empty : prefix;
+                }
+
+                var baseUrl =
+                    _configuration["BlobBaseURL"] ??
+                    _configuration["Blob_URL"] ??
+                    _configuration.GetConnectionString("BlobBaseURL") ??
+                    _configuration.GetConnectionString("Blob_URL") ??
+                    _configuration["ConnectionStrings:BlobBaseURL"] ??
+                    _configuration["ConnectionStrings:Blob_URL"];
+
+                try
+                {
+                    if (string.IsNullOrWhiteSpace(baseUrl)) return string.Empty;
+                    var uri = new Uri(baseUrl);
+                    // segments: ["/", "container/", "optional-prefix/", ...]
+                    if (uri.Segments.Length <= 2) return string.Empty;
+                    var prefix = string.Join(string.Empty, uri.Segments.Skip(2));
+                    // Normalize to ensure trailing slash if not empty
+                    if (!string.IsNullOrEmpty(prefix) && !prefix.EndsWith("/")) prefix += "/";
+                    return prefix;
+                }
+                catch
+                {
+                    return string.Empty;
+                }
+            }
+
+            private static string? ExtractContainerName(string? url)
+            {
+                try
+                {
+                    if (string.IsNullOrWhiteSpace(url)) return null;
+                    var uri = new Uri(url);
+                    // Expecting https://account.blob.core.windows.net/container[/...]
+                    if (uri.Segments.Length >= 2)
+                    {
+                        return uri.Segments[1].Trim('/');
+                    }
+                }
+                catch { /* ignore parse issues */ }
+                return null;
+            }
 
         private System.Collections.Generic.List<string> ValidateVehicle(AddVehicleRequest vehicle)
         {

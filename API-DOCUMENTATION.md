@@ -15,6 +15,7 @@ This document provides a comprehensive list of all API endpoints with expected i
 6. [CDN Management Endpoints](#cdn-management-endpoints)
 7. [Reference Data Endpoints](#reference-data-endpoints)
 8. [Unit Features Endpoints](#unit-features-endpoints)
+9. [Image Management Endpoints](#image-management-endpoints)
 
 ---
 
@@ -301,6 +302,147 @@ This document provides a comprehensive list of all API endpoints with expected i
   "statusCode": 404
 }
 ```
+
+
+## Image Management Endpoints
+
+Images are stored in Azure Blob Storage under a VIN-based folder using a path prefix. The standard layout is:
+
+- Container: derived from configuration (e.g., `invpics`)
+- Path prefix: `invpics/units/` (configurable)
+- Per unit folder: `{VIN}/`
+- Filenames: sequential numbers starting at 1 with an image file extension (e.g., `1.jpg`, `2.png`)
+
+Notes:
+- When you upload an image, the API auto-assigns the next available integer filename.
+- URLs in responses are constructed from your configured public Blob base URL when available.
+- Rename operations avoid overwriting existing images.
+
+### 19. List Unit Images
+**Purpose:** List all images for a unit, sorted numerically by filename
+
+**Endpoint:** `GET /units/{id}/images`
+
+**Path Parameters:**
+- `id` (required): UnitID (integer)
+
+**Response:**
+```json
+[
+  {
+    "name": "1.jpg",
+    "url": "https://storageaccount.blob.core.windows.net/invpics/units/1FTFW1E50LFA12345/1.jpg"
+  },
+  {
+    "name": "2.jpg",
+    "url": "https://storageaccount.blob.core.windows.net/invpics/units/1FTFW1E50LFA12345/2.jpg"
+  }
+]
+```
+
+**Error Response (Invalid ID):**
+```json
+{
+  "error": true,
+  "message": "Invalid UnitID format. Must be a positive number.",
+  "statusCode": 400
+}
+```
+
+### 20. Get Unit Image (Redirect)
+**Purpose:** Resolve a specific image for a unit and redirect to the blob URL
+
+**Endpoint:** `GET /units/{id}/images/{name}`
+
+**Behavior:** Returns HTTP 302 redirect to the image URL. The `{name}` must include the extension (e.g., `1.jpg`).
+
+**Error Response (Not Found):**
+```json
+{
+  "error": true,
+  "message": "Image not found",
+  "statusCode": 404
+}
+```
+
+### 21. Upload Unit Image (Auto-number)
+**Purpose:** Upload a new image for a unit; assigns the next numeric filename automatically
+
+**Endpoint:** `POST /units/{id}/images`
+
+**Headers:**
+- `Content-Type`: Image MIME type (e.g., `image/jpeg`, `image/png`)
+
+**Query Parameters (optional):**
+- `ext`: Force an extension (e.g., `jpg`, `png`). If omitted, the server maps from `Content-Type`.
+
+**Body:** Raw binary image.
+
+**Response:**
+```json
+{
+  "success": true,
+  "name": "3.jpg",
+  "url": "https://storageaccount.blob.core.windows.net/invpics/units/1FTFW1E50LFA12345/3.jpg"
+}
+```
+
+**Error Response (Unsupported Media Type):**
+```json
+{
+  "error": true,
+  "message": "Unsupported image content type",
+  "statusCode": 415
+}
+```
+
+### 22. Delete Unit Image
+**Purpose:** Delete a specific image for a unit
+
+**Endpoint:** `DELETE /units/{id}/images/{name}`
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Image deleted"
+}
+```
+
+**Error Response (Not Found):**
+```json
+{
+  "error": true,
+  "message": "Image not found",
+  "statusCode": 404
+}
+```
+
+### 23. Rename Unit Image
+**Purpose:** Rename an existing image; prevents overwrite if the destination exists
+
+**Endpoint:** `PUT /units/{id}/images/{oldName}/rename/{newName}`
+
+**Notes:**
+- Both `oldName` and `newName` must include the extension (e.g., `1.jpg`).
+- If `oldName` and `newName` are identical (case-insensitive), the operation is a no-op and returns 200 with `moved: false`.
+- Reordering is supported. When moving an image from index `A` to `B`, the API automatically shifts images in between to avoid collisions:
+  - If `A < B` (move down): `A+1 -> A`, `A+2 -> A+1`, …, `B -> B-1`, and finally `A -> B`.
+  - If `A > B` (move up): `A-1 -> A`, `A-2 -> A-1`, …, `B -> B+1`, and finally `A -> B`.
+  - Each file keeps its own extension while its numeric index changes (e.g., `3.png` moved to position 2 becomes `2.png`).
+  - The operation uses a safe two-phase temp copy to avoid overwrite errors, so it's atomic with respect to collisions.
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "message": "Image renamed",
+  "from": "1.jpg",
+  "to": "2.jpg"
+}
+```
+
+> Note: When reordering, a pre-existing destination index is expected and will be shifted automatically; you should not see a 409 in normal reorder scenarios.
 
 ### 8. Set Vehicle Status
 **Purpose:** Update the status of a specific vehicle
@@ -967,6 +1109,22 @@ Required environment variables for full functionality:
 - `AZURE_RESOURCE_GROUP` - Resource group (CDN purge)
 - `AZURE_FD_PROFILE` - Front Door profile (CDN purge)
 - `AZURE_FD_ENDPOINT` - Front Door endpoint (CDN purge)
+
+Blob storage settings (images):
+- `BlobConnectionString` - Storage account connection string (preferred for server-side operations)
+- `BlobContainerName` - Container name when using connection string (e.g., `invpics`) — optional if derivable from base URL
+- `BlobBaseURL` or `Blob_URL` - Public base URL to construct image links; may include container and optional path prefix
+- `BlobPathPrefix` - Optional override of the path inside the container preceding the VIN folders (e.g., `units/`). If omitted, the service derives it from the `BlobBaseURL` path after the container name.
+
+Example (public dev):
+```json
+{
+  "Blob_URL": "https://storageinventoryflatt.blob.core.windows.net/invpics/units/",
+  "BlobConnectionString": "<connection string>",
+  "BlobContainerName": "invpics",
+  "BlobPathPrefix": "units/"
+}
+```
 
 ---
 

@@ -8,6 +8,9 @@ using System.Threading.Tasks;
 using System;
 using Microsoft.Data.SqlClient;
 using System.Diagnostics;
+using Azure.Storage.Blobs;
+using Azure.Identity;
+using Azure;
 
 namespace flatt_functions
 {
@@ -83,13 +86,21 @@ namespace flatt_functions
                     return response;
                 }
 
-                // Delete
+                // Capture VIN before deletion for blob cleanup
+                var vin = await GetVinForUnit(unitId);
+
+                // Delete DB row
                 var deleted = await DeleteUnit(unitId);
 
                 stopwatch.Stop();
 
                 if (deleted)
                 {
+                    // Best-effort: delete VIN folder in blob storage
+                    if (!string.IsNullOrWhiteSpace(vin))
+                    {
+                        _ = TryDeleteVinFolderAsync(vin!);
+                    }
                     _logger.LogInformation("✅ Vehicle deleted successfully - UnitID: {unitId}", unitId);
                     response.StatusCode = HttpStatusCode.OK;
                     response.Headers.Add("Content-Type", "application/json; charset=utf-8");
@@ -133,6 +144,133 @@ namespace flatt_functions
                 }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true }));
                 return response;
             }
+        }
+
+        private async Task<string?> GetVinForUnit(int unitId)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+            var query = "SELECT [VIN] FROM [Units] WHERE [UnitID] = @UnitID";
+            using var cmd = new SqlCommand(query, connection);
+            cmd.Parameters.AddWithValue("@UnitID", unitId);
+            var result = await cmd.ExecuteScalarAsync();
+            return result as string;
+        }
+
+        private async Task TryDeleteVinFolderAsync(string vin)
+        {
+            try
+            {
+                var containerClient = ResolveContainerClient();
+                if (containerClient == null)
+                {
+                    _logger.LogWarning("Blob storage not configured. Skipping VIN folder deletion for {vin}", vin);
+                    return;
+                }
+
+                var basePrefix = GetBlobPathPrefix();
+                var prefix = basePrefix + vin + "/";
+                await foreach (var blob in containerClient.GetBlobsAsync(prefix: prefix))
+                {
+                    try
+                    {
+                        await containerClient.DeleteBlobIfExistsAsync(blob.Name);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed deleting blob {name} for VIN {vin}", blob.Name, vin);
+                    }
+                }
+                _logger.LogInformation("Deleted VIN folder and blobs for {vin} (prefix: '{prefixUsed}')", vin, basePrefix);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to delete VIN folder for {vin}. Continuing.", vin);
+            }
+        }
+
+        private BlobContainerClient? ResolveContainerClient()
+        {
+            // Prefer connection string if available (DEV)
+            var connString =
+                _configuration["BlobConnectionString"] ??
+                _configuration.GetConnectionString("BlobConnectionString") ??
+                _configuration["ConnectionStrings:BlobConnectionString"];
+
+            var baseUrl =
+                _configuration["BlobBaseURL"] ??
+                _configuration["Blob_URL"] ??
+                _configuration.GetConnectionString("BlobBaseURL") ??
+                _configuration.GetConnectionString("Blob_URL") ??
+                _configuration["ConnectionStrings:BlobBaseURL"] ??
+                _configuration["ConnectionStrings:Blob_URL"];
+
+            if (!string.IsNullOrWhiteSpace(connString))
+            {
+                var containerName = ExtractContainerName(baseUrl) ??
+                                    _configuration["BlobContainerName"] ??
+                                    _configuration.GetConnectionString("BlobContainerName") ??
+                                    _configuration["ConnectionStrings:BlobContainerName"];
+                if (!string.IsNullOrWhiteSpace(containerName))
+                {
+                    return new BlobContainerClient(connString!, containerName!);
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(baseUrl))
+            {
+                return new BlobContainerClient(new Uri(baseUrl!), new DefaultAzureCredential());
+            }
+
+            return null;
+        }
+
+        private string GetBlobPathPrefix()
+        {
+            // 1. Allow explicit override via configuration
+            var explicitPrefix =
+                _configuration["BlobPathPrefix"] ??
+                _configuration.GetConnectionString("BlobPathPrefix") ??
+                _configuration["ConnectionStrings:BlobPathPrefix"];
+            if (!string.IsNullOrWhiteSpace(explicitPrefix))
+            {
+                var prefix = explicitPrefix!.Trim().Trim('/') + "/";
+                return prefix == "/" ? string.Empty : prefix;
+            }
+
+            var baseUrl =
+                _configuration["BlobBaseURL"] ??
+                _configuration["Blob_URL"] ??
+                _configuration.GetConnectionString("BlobBaseURL") ??
+                _configuration.GetConnectionString("Blob_URL") ??
+                _configuration["ConnectionStrings:BlobBaseURL"] ??
+                _configuration["ConnectionStrings:Blob_URL"];
+
+            try
+            {
+                if (string.IsNullOrWhiteSpace(baseUrl)) return string.Empty;
+                var uri = new Uri(baseUrl);
+                if (uri.Segments.Length <= 2) return string.Empty;
+                var prefix = string.Join(string.Empty, uri.Segments.Skip(2));
+                if (!string.IsNullOrEmpty(prefix) && !prefix.EndsWith("/")) prefix += "/";
+                return prefix;
+            }
+            catch { return string.Empty; }
+        }
+
+        private static string? ExtractContainerName(string? url)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(url)) return null;
+                var uri = new Uri(url);
+                if (uri.Segments.Length >= 2)
+                {
+                    return uri.Segments[1].Trim('/');
+                }
+            }
+            catch { }
+            return null;
         }
 
         private async Task<bool> CheckUnitExists(int unitId)
