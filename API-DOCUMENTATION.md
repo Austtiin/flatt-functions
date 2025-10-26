@@ -318,6 +318,27 @@ Notes:
 - URLs in responses are constructed from your configured public Blob base URL when available.
 - Rename operations avoid overwriting existing images.
 
+#### Image Ordering Model (How sorting works)
+
+- Order is defined by the numeric filename, not upload date. The lowest number is the first image.
+- Filenames must be in the format `<index>.<ext>` where `<ext>` is one of: jpg, jpeg, png, webp, gif.
+- Extensions are preserved during reordering; only the numeric index changes.
+- Gaps are allowed (e.g., 1.png, 3.jpg) and are safely handled when reordering.
+
+Typical path for a unit’s images:
+
+```
+{container}/{prefix}{VIN}/{index}.{ext}
+```
+
+Examples:
+
+```
+invpics/units/1HGCM82633A004352/1.jpg
+invpics/units/1HGCM82633A004352/2.png
+invpics/units/1HGCM82633A004352/3.webp
+```
+
 ### 19. List Unit Images
 **Purpose:** List all images for a unit, sorted numerically by filename
 
@@ -431,6 +452,41 @@ Notes:
   - If `A > B` (move up): `A-1 -> A`, `A-2 -> A-1`, …, `B -> B+1`, and finally `A -> B`.
   - Each file keeps its own extension while its numeric index changes (e.g., `3.png` moved to position 2 becomes `2.png`).
   - The operation uses a safe two-phase temp copy to avoid overwrite errors, so it's atomic with respect to collisions.
+
+Conceptual placeholder model (for understanding):
+
+- You can think of the server doing: `B -> moving`, `A -> B`, `moving -> A`. This is logically equivalent to how the API executes reorders.
+- Implementation detail: the server actually stages to a hidden temp folder to avoid any visible placeholder files or collisions.
+
+#### Front-end quick guide: reorder with one call
+
+- You only need a single request to reorder; do not create placeholders or issue multiple renames.
+- Build the `newName` using the target index plus the same extension as `oldName`.
+  - Example: moving `4.jpg` to index 7 → `newName = "7.jpg"`.
+- The server will shift other images for you and preserve each file’s original extension.
+
+Recommended client steps:
+1) GET `/units/{id}/images` and render in numeric order (filenames determine order).
+2) When the user drops image `oldName` at position `B`, construct `newName = "B" + ext(oldName)`.
+3) PUT `/units/{id}/images/{oldName}/rename/{newName}`.
+4) On 200, refresh the list with GET `/units/{id}/images`.
+
+Behavior and responses:
+- Success: `200` with body `{ "oldName": "4.jpg", "newName": "7.jpg", "moved": true }`.
+- No-op: if `oldName == newName` (case-insensitive), returns `200` with `{ moved: false }`.
+- Not found: `404` if the `oldName` doesn’t exist.
+- Conflict: `409` only when attempting to rename to an already existing exact filename outside of normal reordering (e.g., changing the extension to a name that already exists). Normal A→B reorders won’t 409.
+
+Examples:
+- Move 1.png → 2.png
+  - Effect: 2.* shifts to 1.*, then 1.png becomes 2.png.
+- Move 4.jpg → 7.jpg
+  - Effect: 5.* → 4.*, 6.* → 5.*, 7.* → 6.*, then 4.jpg → 7.jpg.
+
+Limits and guarantees:
+- There is no practical upper bound on index values; any A→B is allowed as long as filenames are valid.
+- Each involved file’s Content-Type is preserved during reordering.
+- The server avoids partial overwrites via temp-staging; under normal conditions you won’t see intermediate states.
 
 **Response (Success):**
 ```json
