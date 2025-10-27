@@ -387,33 +387,34 @@ invpics/units/1HGCM82633A004352/3.webp
 ```
 
 ### 21. Upload Unit Image (Auto-number)
-**Purpose:** Upload a new image for a unit; assigns the next numeric filename automatically
+**Purpose:** Upload a new image for a unit; assigns the next numeric filename automatically and converts to WebP
 
 **Endpoint:** `POST /units/{id}/images`
 
-**Headers:**
-- `Content-Type`: Image MIME type (e.g., `image/jpeg`, `image/png`)
+**What it does:**
+- Accepts only image payloads (JPEG, PNG, GIF, WebP). If the body is not a valid image, the request is rejected.
+- Automatically converts the image to WebP on the server.
+- Stores the file as `{nextIndex}.webp` and sets `Content-Type: image/webp`.
 
-**Query Parameters (optional):**
-- `ext`: Force an extension (e.g., `jpg`, `png`). If omitted, the server maps from `Content-Type`.
-
-**Body:** Raw binary image.
+**Request:**
+- Headers: `Content-Type` should be an image type (e.g., `image/jpeg`, `image/png`).
+- Body: Raw binary image.
 
 **Response:**
 ```json
 {
   "success": true,
-  "name": "3.jpg",
-  "url": "https://storageaccount.blob.core.windows.net/invpics/units/1FTFW1E50LFA12345/3.jpg"
+  "name": "3.webp",
+  "url": "https://storageaccount.blob.core.windows.net/invpics/units/1FTFW1E50LFA12345/3.webp"
 }
 ```
 
-**Error Response (Unsupported Media Type):**
+**Error Response (Invalid Image):**
 ```json
 {
   "error": true,
-  "message": "Unsupported image content type",
-  "statusCode": 415
+  "message": "Only image uploads are accepted (jpg, jpeg, png, webp, gif). The payload was not recognized as an image.",
+  "statusCode": 400
 }
 ```
 

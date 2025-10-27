@@ -13,6 +13,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using ImageMagick;
 
 namespace flatt_functions
 {
@@ -63,6 +64,9 @@ namespace flatt_functions
                 {
                     var fullName = blob.Name; // e.g., invpics/units/VIN/3.jpg
                     var fileName = fullName.Substring(prefix.Length);
+                    // Skip hidden/placeholder blobs like .init or any name starting with a dot
+                    if (string.IsNullOrWhiteSpace(fileName) || fileName.StartsWith(".", StringComparison.Ordinal))
+                        continue;
                     var url = BuildPublicUrl(container, fullName, fileName, vin);
                     items.Add(new { name = fileName, url });
                 }
@@ -140,10 +144,26 @@ namespace flatt_functions
                 var container = ResolveContainerClient();
                 if (container == null) return await Error(res, "Blob storage not configured");
 
-                // determine extension
-                var contentType = req.Headers.TryGetValues("Content-Type", out var ctVals) ? ctVals.FirstOrDefault() : null;
-                var ext = MapExtension(contentType) ?? (req.Url.Query.Contains("ext=") ? GetQuery(req, "ext") : null);
-                if (string.IsNullOrWhiteSpace(ext)) ext = ".jpg"; // default
+                // read request body into memory
+                using var incoming = new MemoryStream();
+                await req.Body.CopyToAsync(incoming);
+                incoming.Position = 0;
+
+                // validate and decode as image; only allow image formats
+                using var webpStream = new MemoryStream();
+                try
+                {
+                    incoming.Position = 0;
+                    using var magick = new MagickImage(incoming);
+                    // Convert to WebP with quality 80
+                    magick.Quality = 80;
+                    magick.Write(webpStream, MagickFormat.WebP);
+                }
+                catch
+                {
+                    return await BadRequest(res, "Only image uploads are accepted (jpg, jpeg, png, webp, gif). The payload was not recognized as an image.");
+                }
+                webpStream.Position = 0;
 
                 // find next index
                 var basePrefix = GetBlobPathPrefix();
@@ -156,12 +176,17 @@ namespace flatt_functions
                     if (n.HasValue && n.Value > maxIndex) maxIndex = n.Value;
                 }
                 var nextIndex = maxIndex + 1;
-                var newName = nextIndex.ToString() + NormalizeExt(ext);
+                // force .webp extension for stored image
+                var newName = nextIndex.ToString() + ".webp";
                 var blobPath = prefix + newName;
 
-                // upload body as-is
+                // upload converted webp
                 var blob = container.GetBlobClient(blobPath);
-                await blob.UploadAsync(req.Body, overwrite: false);
+                var headers = new Azure.Storage.Blobs.Models.BlobHttpHeaders
+                {
+                    ContentType = "image/webp"
+                };
+                await blob.UploadAsync(webpStream, httpHeaders: headers);
 
                 var url = BuildPublicUrl(container, blobPath, newName, vin);
                 res.StatusCode = HttpStatusCode.Created;

@@ -268,15 +268,8 @@ namespace flatt_functions
                     // Ensure container exists (best-effort)
                     try { await containerClient.CreateIfNotExistsAsync(); } catch { /* ignore */ }
 
-                    // Create a placeholder blob to represent the folder under the base prefix (e.g., units/)
-                    var basePrefix = GetBlobPathPrefix();
-                    var blobClient = containerClient.GetBlobClient($"{basePrefix}{vin}/.init");
-                    if (!await blobClient.ExistsAsync())
-                    {
-                        using var stream = new MemoryStream(Array.Empty<byte>());
-                        await blobClient.UploadAsync(stream);
-                        _logger.LogInformation("Created VIN folder placeholder at {path} (prefix: '{prefix}')", blobClient.Uri, basePrefix);
-                    }
+                    // No placeholder blob needed; folderless namespaces are created implicitly on first real upload
+                    // Keep method as a no-op beyond ensuring the container exists
                 }
                 catch (Exception ex)
                 {
