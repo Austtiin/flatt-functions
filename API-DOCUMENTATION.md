@@ -16,6 +16,7 @@ This document provides a comprehensive list of all API endpoints with expected i
 7. [Reference Data Endpoints](#reference-data-endpoints)
 8. [Unit Features Endpoints](#unit-features-endpoints)
 9. [Image Management Endpoints](#image-management-endpoints)
+10. [Inquiry Email Endpoint](#inquiry-email-endpoint)
 
 ---
 
@@ -311,12 +312,13 @@ Images are stored in Azure Blob Storage under a VIN-based folder using a path pr
 - Container: derived from configuration (e.g., `invpics`)
 - Path prefix: `invpics/units/` (configurable)
 - Per unit folder: `{VIN}/`
-- Filenames: sequential numbers starting at 1 with an image file extension (e.g., `1.jpg`, `2.png`)
+- Filenames: sequential numbers starting at 1. New uploads are normalized to WebP: `1.webp`, `2.webp`, ... (older images may keep their original extensions).
 
 Notes:
 - When you upload an image, the API auto-assigns the next available integer filename.
 - URLs in responses are constructed from your configured public Blob base URL when available.
 - Rename operations avoid overwriting existing images.
+- Listings automatically skip any dot-prefixed placeholder or temp blobs (e.g., `.init`, `.tmp-*`).
 
 #### Image Ordering Model (How sorting works)
 
@@ -334,8 +336,8 @@ Typical path for a unit’s images:
 Examples:
 
 ```
-invpics/units/1HGCM82633A004352/1.jpg
-invpics/units/1HGCM82633A004352/2.png
+invpics/units/1HGCM82633A004352/1.webp
+invpics/units/1HGCM82633A004352/2.webp
 invpics/units/1HGCM82633A004352/3.webp
 ```
 
@@ -351,12 +353,12 @@ invpics/units/1HGCM82633A004352/3.webp
 ```json
 [
   {
-    "name": "1.jpg",
-    "url": "https://storageaccount.blob.core.windows.net/invpics/units/1FTFW1E50LFA12345/1.jpg"
+    "name": "1.webp",
+    "url": "https://storageaccount.blob.core.windows.net/invpics/units/1FTFW1E50LFA12345/1.webp"
   },
   {
-    "name": "2.jpg",
-    "url": "https://storageaccount.blob.core.windows.net/invpics/units/1FTFW1E50LFA12345/2.jpg"
+    "name": "2.webp",
+    "url": "https://storageaccount.blob.core.windows.net/invpics/units/1FTFW1E50LFA12345/2.webp"
   }
 ]
 ```
@@ -500,6 +502,100 @@ Limits and guarantees:
 ```
 
 > Note: When reordering, a pre-existing destination index is expected and will be shifted automatically; you should not see a 409 in normal reorder scenarios.
+
+---
+
+## Inquiry Email Endpoint
+
+
+### 24. Send Inquiry Email
+**Purpose:** Accepts a customer inquiry and sends two branded emails via Azure Communication Services (ACS): a confirmation to the customer and a notification to sales.
+
+**Endpoint:** `POST /inquiries`
+
+**Headers:**
+- `Content-Type: application/json` (required)
+
+**Request Body:**
+```json
+{
+  "userEmail": "customer@example.com",           // required
+  "message": "I'm interested in this unit.",      // required
+  "subject": "Inquiry about stock #VH123",        // optional
+  "name": "Jane Doe",                            // optional
+  "phone": "+1 (555) 123-4567",                 // optional
+  "unitId": 145,                                  // optional
+  "vin": "1FTFW1E50LFA12345",                   // optional
+  "meta": {                                       // optional, object of key/value pairs
+    "stockNo": "VH123",
+    "source": "website"
+  }
+}
+```
+
+**Required fields:**
+- `userEmail` (string): Customer's email address. Used for confirmation and Reply-To.
+- `message` (string): Inquiry message. Alias: `body` (case-insensitive).
+
+**Optional fields:**
+- `subject` (string): Custom subject line for emails.
+- `name` (string): Customer name.
+- `phone` (string): Customer phone number.
+- `unitId` (integer): Inventory unit reference.
+- `vin` (string): Vehicle VIN reference.
+- `meta` (object): Additional details as key/value pairs (shown in email table).
+
+**Behavior:**
+- Sends two emails using ACS Email:
+  - Confirmation to the user from your configured `EmailFrom`. Reply-To is set to your `SendToEmail`.
+  - Notification to `SendToEmail`. Reply-To is set to the user’s email.
+- Emails include branding, dealership contact/hours, and a table of provided details/meta.
+- The HTTP response includes strict no-cache headers.
+
+**Response (202 Accepted):**
+```json
+{
+  "ok": true,
+  "confirmOperationId": "<guid>",
+  "salesOperationId": "<guid>"
+}
+```
+
+**Example Response Headers:**
+```
+Content-Type: application/json; charset=utf-8
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: GET, POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type
+Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+Pragma: no-cache
+Expires: Thu, 01 Jan 1970 00:00:00 GMT
+```
+
+**Error Responses:**
+- `400` when `userEmail` or `message` is missing: `{ "error": true, "message": "userEmail and message are required." }`
+- `500` when email configuration is missing or send fails: `{ "error": true, "message": "Failed to send email. Please try again later." }`
+
+#### Request/response contract
+
+- Request must be valid JSON with `Content-Type: application/json`.
+- On success, the API returns HTTP 202 with two ACS operation IDs. These IDs can be used to query ACS for delivery status if needed.
+- Responses include CORS and strict no-cache headers to prevent client/CDN caching.
+
+#### Example (curl)
+
+```bash
+curl -X POST "https://your-function-app.azurewebsites.net/api/inquiries" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "userEmail": "customer@example.com",
+        "message": "I have a question about this unit",
+        "subject": "Website inquiry",
+        "name": "Jane Doe",
+        "phone": "",
+        "meta": { "type": "contact", "source": "website" }
+      }'
+```
 
 ### 8. Set Vehicle Status
 **Purpose:** Update the status of a specific vehicle
@@ -1180,6 +1276,44 @@ Example (public dev):
   "BlobConnectionString": "<connection string>",
   "BlobContainerName": "invpics",
   "BlobPathPrefix": "units/"
+}
+```
+
+Email (ACS) settings:
+- `EmailConnectionString` - ACS Email connection string. Also supported under `ConnectionStrings:EmailConnectionString`.
+- `EmailFrom` - Verified sender email address in your ACS resource.
+  - Fallback keys also accepted by the API: `EmailSender`, `Acs:SenderAddress`, `AzureCommunicationServices:SenderAddress`, `ACS_SENDER_ADDRESS`, `mailFrom`, environment variables `EMAIL_FROM`, `mailFrom`.
+  - Example (default ACS domain): `DoNotReply@<resource-guid>.azurecomm.net`.
+  - Use your own custom verified domain if configured in ACS.
+- `SalesEmail` - Sales inbox to receive notifications (default: `Austin@Fuhrent.com`).
+  - Fallback keys also accepted by the API: `SendToEmail`, `Sales:Email`, environment variables `SALES_EMAIL`, `SEND_TO_EMAIL`.
+- `EmailLogoUrl` - Optional absolute URL to a logo used in the email header.
+- `Dealer:*` - Optional branding overrides used in the email templates:
+  - `Dealer:Name` (default: IceCastleUSA.com)
+  - `Dealer:SiteUrl` (default: https://IceCastleUSA.com)
+  - `Dealer:Phone` (default: (651) 272-5474), `Dealer:PhoneHref` (default: +16512725474)
+  - `Dealer:Email` (default: sales@icecastleusa.com)
+  - `Dealer:Address1`, `Dealer:Address2`, `Dealer:Country`
+  - `Dealer:Hours` (multiline string)
+  - `Dealer:MapUrl` (Google Maps link)
+
+Example (email settings):
+```json
+{
+  "EmailConnectionString": "endpoint=https://<acs>.communication.azure.com/;accesskey=<key>",
+  "EmailFrom": "DoNotReply@<resource-guid>.azurecomm.net",
+  "SalesEmail": "sales@yourdomain.com",
+  "EmailLogoUrl": "https://cdn.yourdomain.com/assets/logo.png",
+  "Dealer:Name": "Your Dealer Name",
+  "Dealer:SiteUrl": "https://www.yourdealer.com",
+  "Dealer:Phone": "(555) 000-0000",
+  "Dealer:PhoneHref": "+15550000000",
+  "Dealer:Email": "info@yourdealer.com",
+  "Dealer:Address1": "123 Main St",
+  "Dealer:Address2": "Your City, ST 12345",
+  "Dealer:Country": "United States",
+  "Dealer:Hours": "Mon-Fri: 9-6\nSat: 9-4\nSun: Closed",
+  "Dealer:MapUrl": "https://maps.google.com/?q=123+Main+St+Your+City+ST+12345"
 }
 ```
 

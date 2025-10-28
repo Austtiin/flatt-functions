@@ -16,9 +16,10 @@
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />
     <PackageReference Include="Azure.Identity" Version="1.12.0" />
-    <PackageReference Include="Azure.Core" Version="1.41.0" />
+  <PackageReference Include="Azure.Core" Version="1.49.0" />
     <PackageReference Include="Azure.Storage.Blobs" Version="12.20.0" />
   <PackageReference Include="Magick.NET-Q8-AnyCPU" Version="14.9.0" />
+    <PackageReference Include="Azure.Communication.Email" Version="1.1.0" />
   </ItemGroup>
   <ItemGroup>
     <None Update="host.json">
