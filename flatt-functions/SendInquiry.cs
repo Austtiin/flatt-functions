@@ -25,6 +25,15 @@ namespace flatt_functions
             _config = config;
         }
 
+        private record TradeInInfo(
+            string? Year,
+            string? Make,
+            string? Model,
+            string? MileageOrHours,
+            string? Condition,
+            List<string>? Images
+        );
+
         private record InquiryRequest(
             string? UserEmail,
             string? Subject,
@@ -33,7 +42,8 @@ namespace flatt_functions
             string? Phone,
             int? UnitId,
             string? Vin,
-            Dictionary<string, object>? Meta
+            Dictionary<string, object>? Meta,
+            TradeInInfo? TradeIn
         );
 
         [Function("SendInquiry")]
@@ -43,261 +53,180 @@ namespace flatt_functions
         {
             var res = req.CreateResponse();
             AddCors(res);
+
             try
             {
-                // Read raw body for logging and robust error reporting
-                string raw = (await new StreamReader(req.Body).ReadToEndAsync()) ?? string.Empty;
+                string raw = await new StreamReader(req.Body).ReadToEndAsync();
+                if (string.IsNullOrWhiteSpace(raw))
+                    return await BadRequest(res, "Empty request body.");
 
-                var invocationId = executionContext?.InvocationId.ToString() ?? string.Empty;
-                string contentType = req.Headers.TryGetValues("Content-Type", out var ctVals) ? string.Join(",", ctVals) : "";
-                string contentLength = req.Headers.TryGetValues("Content-Length", out var clVals) ? string.Join(",", clVals) : "";
-                string userAgent = req.Headers.TryGetValues("User-Agent", out var uaVals) ? string.Join(",", uaVals) : "";
-                string xff = req.Headers.TryGetValues("x-forwarded-for", out var xffVals) ? string.Join(",", xffVals) : "";
-
-                _logger.LogInformation(
-                    "Inquiry received invId={invId} ct={ct} cl={cl} ua={ua} xff={xff} rawChars={rawLen}",
-                    invocationId, contentType, contentLength, userAgent, xff, raw?.Length ?? 0);
-
-                using var doc = JsonDocument.Parse(raw);
-                var root = doc.RootElement;
-                var body = JsonSerializer.Deserialize<InquiryRequest>(root.GetRawText(), new JsonSerializerOptions
+                var inquiry = JsonSerializer.Deserialize<InquiryRequest>(raw, new JsonSerializerOptions
                 {
                     PropertyNameCaseInsensitive = true
                 });
 
-                // Fallbacks for common client-side mismatches:
-                // - Accept "body"/"Body" as an alias for "message"
-                if (body is not null && string.IsNullOrWhiteSpace(body.Message))
-                {
-                    if (TryGetCaseInsensitiveString(root, "body", out var altMsg) && !string.IsNullOrWhiteSpace(altMsg))
-                    {
-                        body = body with { Message = altMsg };
-                    }
-                }
+                if (inquiry == null || string.IsNullOrWhiteSpace(inquiry.UserEmail) || string.IsNullOrWhiteSpace(inquiry.Message))
+                    return await BadRequest(res, "userEmail and message fields are required.");
 
-                if (body is null || string.IsNullOrWhiteSpace(body.UserEmail) || string.IsNullOrWhiteSpace(body.Message))
-                {
-                    _logger.LogWarning("Inquiry validation failed invId={invId}: missing userEmail or message. Raw: {raw}", invocationId, Truncate(raw, 2000));
-                    return await BadRequest(res, "userEmail and message are required.");
-                }
-
-                // Read sender, recipient, and connection string ONLY from environment variables
                 var fromAddress = Environment.GetEnvironmentVariable("EmailFrom");
-                if (string.IsNullOrWhiteSpace(fromAddress))
-                {
-                    return await Error(res, "EmailFrom environment variable is not set. Example: DoNotReply@<resource-guid>.azurecomm.net");
-                }
-                _logger.LogInformation("Inquiry using sender address: {from}", fromAddress);
-
-                var salesAddress = Environment.GetEnvironmentVariable("SendToEmail");
-                if (string.IsNullOrWhiteSpace(salesAddress))
-                {
-                    return await Error(res, "SendToEmail environment variable is not set. Example: sales@yourdomain.com");
-                }
-                _logger.LogInformation("Inquiry using sales/notification address: {sales}", salesAddress);
-
+                var salesAddress = Environment.GetEnvironmentVariable("SalesEmail");
                 var emailConn = Environment.GetEnvironmentVariable("EmailConnectionString");
-                if (string.IsNullOrWhiteSpace(emailConn))
-                {
-                    return await Error(res, "EmailConnectionString environment variable is not set.");
-                }
+
+                if (string.IsNullOrWhiteSpace(fromAddress) || string.IsNullOrWhiteSpace(salesAddress) || string.IsNullOrWhiteSpace(emailConn))
+                    return await Error(res, "EmailFrom, SalesEmail, and EmailConnectionString environment variables must be set.");
 
                 var client = new EmailClient(emailConn);
 
-                // Build content: dealership branding + details
-                string subject = string.IsNullOrWhiteSpace(body.Subject) ? "We received your inquiry" : body.Subject!.Trim();
-                string userName = string.IsNullOrWhiteSpace(body.Name) ? body.UserEmail! : body.Name!.Trim();
+                // Dealership Branding
+                var logoUrl = "https://icecastleusa.com/assets/img/logo-icecastleusa.png";
+                var siteUrl1 = "https://IceCastleUSA.com";
+                var siteUrl2 = "https://ForestLakeAuto.com";
+                var phone = "(651) 272-5474";
+                var address = "356 19th St SW, Forest Lake, MN 55025";
+                var mapUrl = "https://maps.google.com/?q=356+19th+St+SW+Forest+Lake+MN+55025";
+                var blue = "#0033a0";
+                var red = "#c40000";
 
-                // Defaults with optional overrides from configuration (these can remain config-based)
-                string dealerName = _config["Dealer:Name"] ?? "IceCastleUSA.com";
-                string dealerSite = _config["Dealer:SiteUrl"] ?? "https://IceCastleUSA.com";
-                string dealerPhone = _config["Dealer:Phone"] ?? "(651) 272-5474";
-                string dealerPhoneHref = _config["Dealer:PhoneHref"] ?? "+16512725474";
-                string dealerEmail = _config["Dealer:Email"] ?? "sales@icecastleusa.com";
-                string dealerAddress1 = _config["Dealer:Address1"] ?? "356 19th St SW";
-                string dealerAddress2 = _config["Dealer:Address2"] ?? "Forest Lake, MN 55025";
-                string dealerCountry = _config["Dealer:Country"] ?? "United States";
-                string dealerHours = _config["Dealer:Hours"] ?? "Monday - Friday: 9:00 AM - 6:00 PM\nSaturday: 9:00 AM - 4:00 PM\nSunday: Closed";
-                string dealerMapUrl = _config["Dealer:MapUrl"] ?? "https://maps.google.com/?q=356+19th+St+SW+Forest+Lake+MN+55025";
-                string logoUrl = _config["EmailLogoUrl"] ?? string.Empty; // optional external logo URL
+                string name = WebUtility.HtmlEncode(inquiry.Name ?? "Customer");
+                string vin = WebUtility.HtmlEncode(inquiry.Vin ?? "N/A");
+                string phoneText = WebUtility.HtmlEncode(inquiry.Phone ?? "Not provided");
+                string message = WebUtility.HtmlEncode(inquiry.Message);
 
-                string Safe(string? s) => WebUtility.HtmlEncode(s ?? string.Empty);
-                string nl2br(string? s) => Safe(s).Replace("\n", "<br/>");
-
-                // Meta details table
-                string metaHtml = string.Empty;
-                if (body.Meta != null && body.Meta.Count > 0)
+                // Trade-in details HTML
+                string tradeInHtml = "";
+                if (inquiry.TradeIn != null)
                 {
-                    var parts = new List<string>();
-                    foreach (var kv in body.Meta)
-                        parts.Add($"<tr><td style='padding:6px 8px;color:#666;border-bottom:1px solid #eee'>{Safe(kv.Key)}</td><td style='padding:6px 8px;border-bottom:1px solid #eee'>{Safe(kv.Value?.ToString())}</td></tr>");
-                    metaHtml = $"<table width='100%' style='border-collapse:collapse;margin-top:8px'>{string.Join(string.Empty, parts)}</table>";
+                    var ti = inquiry.TradeIn;
+                    bool hasTradeInInfo = !string.IsNullOrWhiteSpace(ti.Year) || !string.IsNullOrWhiteSpace(ti.Make) || !string.IsNullOrWhiteSpace(ti.Model) || !string.IsNullOrWhiteSpace(ti.MileageOrHours) || !string.IsNullOrWhiteSpace(ti.Condition);
+                    if (hasTradeInInfo)
+                    {
+                        tradeInHtml += "<div style='margin-top:24px;'><h3 style='color:#c40000;margin-bottom:8px;'>Trade-In Information</h3><table style='width:100%;border-collapse:collapse;'>";
+                        if (!string.IsNullOrWhiteSpace(ti.Year)) tradeInHtml += $"<tr><td style='padding:6px 8px;color:#0033a0;font-weight:600;'>Year</td><td style='padding:6px 8px;'>{WebUtility.HtmlEncode(ti.Year)}</td></tr>";
+                        if (!string.IsNullOrWhiteSpace(ti.Make)) tradeInHtml += $"<tr><td style='padding:6px 8px;color:#0033a0;font-weight:600;'>Make</td><td style='padding:6px 8px;'>{WebUtility.HtmlEncode(ti.Make)}</td></tr>";
+                        if (!string.IsNullOrWhiteSpace(ti.Model)) tradeInHtml += $"<tr><td style='padding:6px 8px;color:#0033a0;font-weight:600;'>Model</td><td style='padding:6px 8px;'>{WebUtility.HtmlEncode(ti.Model)}</td></tr>";
+                        if (!string.IsNullOrWhiteSpace(ti.MileageOrHours)) tradeInHtml += $"<tr><td style='padding:6px 8px;color:#0033a0;font-weight:600;'>Mileage/Hours</td><td style='padding:6px 8px;'>{WebUtility.HtmlEncode(ti.MileageOrHours)}</td></tr>";
+                        if (!string.IsNullOrWhiteSpace(ti.Condition)) tradeInHtml += $"<tr><td style='padding:6px 8px;color:#0033a0;font-weight:600;'>Condition</td><td style='padding:6px 8px;'>{WebUtility.HtmlEncode(ti.Condition)}</td></tr>";
+                        tradeInHtml += "</table></div>";
+                    }
                 }
 
-                string submittedUtc = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss 'UTC'");
+                // ----------- USER EMAIL -----------
+                var userHtml = $@"
+                <html>
+                <body style='font-family:Segoe UI,Arial,sans-serif;background:#f8f8f8;padding:0;margin:0;'>
+                    <div style='max-width:600px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #eee;'>
+                        <div style='background:linear-gradient(90deg,{red} 0%,{blue} 100%);padding:24px;text-align:center;'>
+                            <img src='{logoUrl}' alt='Ice Castle USA' style='max-width:180px;margin-bottom:10px;'/>
+                            <h2 style='color:#fff;margin:0;'>Thank You for Your Inquiry!</h2>
+                        </div>
+                        <div style='padding:28px 24px 18px 24px;'>
+                            <p>Hi {name},</p>
+                            <p>We’ve received your inquiry and one of our team members will get back to you soon. Below is a copy of your message for your records.</p>
 
-                string commonDetails = $@"<table width='100%' style='border-collapse:collapse;margin-top:8px'>
-                    <tr><td style='padding:6px 8px;color:#666;width:140px'>Name</td><td style='padding:6px 8px'>{Safe(body.Name)}</td></tr>
-                    <tr><td style='padding:6px 8px;color:#666'>Email</td><td style='padding:6px 8px'><a href='mailto:{Safe(body.UserEmail)}'>{Safe(body.UserEmail)}</a></td></tr>
-                    <tr><td style='padding:6px 8px;color:#666'>Phone</td><td style='padding:6px 8px'><a href='tel:{Safe(body.Phone)}'>{Safe(body.Phone)}</a></td></tr>
-                    <tr><td style='padding:6px 8px;color:#666'>Unit ID</td><td style='padding:6px 8px'>{Safe(body.UnitId?.ToString())}</td></tr>
-                    <tr><td style='padding:6px 8px;color:#666'>VIN</td><td style='padding:6px 8px'>{Safe(body.Vin)}</td></tr>
-                    <tr><td style='padding:6px 8px;color:#666'>Submitted</td><td style='padding:6px 8px'>{submittedUtc}</td></tr>
-                </table>";
+                            <div style='margin-top:20px;background:#fafafa;padding:12px;border-radius:8px;border:1px solid #eee;'>
+                                <p style='margin:0;'><b>Message:</b><br>{message}</p>
+                                <p style='margin:8px 0 0;'><b>Phone:</b> {phoneText}</p>
+                                <p style='margin:4px 0 0;'><b>VIN / Unit ID:</b> {vin}</p>
+                                {tradeInHtml}
+                            </div>
 
-                string headerLogo = string.IsNullOrWhiteSpace(logoUrl)
-                    ? $"<div style='font-size:22px;font-weight:800;letter-spacing:0.5px'>{Safe(dealerName)}</div>"
-                    : $"<img src='{Safe(logoUrl)}' alt='{Safe(dealerName)}' style='max-width:220px;display:block;margin:0 auto'/>";
+                            <div style='margin:32px 0;text-align:center;'>
+                                <a href='{siteUrl1}' style='background:{blue};color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;margin:0 8px;'>Visit IceCastleUSA.com</a>
+                                <a href='{siteUrl2}' style='background:{red};color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;margin:0 8px;'>ForestLakeAuto.com</a>
+                            </div>
 
-                string footer = $@"<table width='100%' style='background:#111;color:#fff;padding:16px;border-radius:8px'>
-                    <tr>
-                        <td style='vertical-align:top'>
-                            <div style='font-weight:700;font-size:14px;color:#fff'>Visit Our Lot</div>
-                            <div style='color:#ddd'>{Safe(dealerAddress1)}<br/>{Safe(dealerAddress2)}<br/>{Safe(dealerCountry)}</div>
-                            <div style='margin-top:6px'><a href='{Safe(dealerMapUrl)}' style='color:#ff4040;text-decoration:none'>Get Directions →</a></div>
-                        </td>
-                        <td style='vertical-align:top'>
-                            <div style='font-weight:700;font-size:14px;color:#fff'>Call Us</div>
-                            <div><a href='tel:{Safe(dealerPhoneHref)}' style='color:#fff;text-decoration:none'>{Safe(dealerPhone)}</a></div>
-                            <div style='font-weight:700;font-size:14px;color:#fff;margin-top:10px'>Email Us</div>
-                            <div><a href='mailto:{Safe(dealerEmail)}' style='color:#fff;text-decoration:none'>{Safe(dealerEmail)}</a></div>
-                        </td>
-                        <td style='vertical-align:top'>
-                            <div style='font-weight:700;font-size:14px;color:#fff'>Business Hours</div>
-                            <div style='color:#ddd'>{nl2br(dealerHours)}</div>
-                        </td>
-                    </tr>
-                </table>";
+                            <p style='font-size:14px;color:#444;text-align:center;margin-top:20px;'>If you have any urgent questions, call us directly at <b>{phone}</b>.</p>
+                        </div>
 
-                string baseCardStart = $@"<div style='max-width:640px;margin:0 auto;padding:16px;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f8f8f8'>
-                    <div style='background:#c40000;color:#fff;padding:14px 18px;border-radius:10px 10px 0 0;text-align:center'>
-                        {headerLogo}
+                        <div style='background:#222;color:#fff;padding:18px;text-align:center;font-size:14px;'>
+                            <p style='margin:0;'><b>Forest Lake Auto Truck & Trailer Sales</b></p>
+                            <p style='margin:0;'>{address}</p>
+                            <p style='margin:0;'>{phone}</p>
+                            <p style='margin:0;'>Mon–Fri: 9AM–4PM | Sat: 9AM–4PM</p>
+                        </div>
                     </div>
-                    <div style='background:#fff;border:1px solid #eee;border-top:0;padding:18px;border-radius:0 0 10px 10px'>";
-                string baseCardEnd = "</div>" + footer + "</div>";
-
-                var confirmHtml = $@"<html><body>
-                    {baseCardStart}
-                        <h2 style='margin:0 0 8px 0;color:#111'>Thanks for your inquiry</h2>
-                        <p style='margin:6px 0;color:#333'>Hi {Safe(userName)}, we received your message and a team member will contact you soon.</p>
-                        {commonDetails}
-                        <div style='margin-top:12px'>
-                            <div style='font-weight:700;color:#111;margin-bottom:6px'>Your message</div>
-                            <div style='background:#fafafa;border:1px solid #eee;border-radius:6px;padding:10px'>{Safe(body.Message)}</div>
-                        </div>
-                        {metaHtml}
-                        <div style='margin-top:16px'>
-                            <a href='{Safe(dealerSite)}' style='display:inline-block;background:#c40000;color:#fff;text-decoration:none;padding:10px 14px;border-radius:6px'>Visit IceCastleUSA.com</a>
-                        </div>
-                    {baseCardEnd}
                 </body></html>";
 
-                var salesHtml = $@"<html><body>
-                    {baseCardStart}
-                        <h2 style='margin:0 0 8px 0;color:#111'>New submission</h2>
-                        {commonDetails}
-                        <div style='margin-top:12px'>
-                            <div style='font-weight:700;color:#111;margin-bottom:6px'>Message</div>
-                            <div style='background:#fafafa;border:1px solid #eee;border-radius:6px;padding:10px'>{Safe(body.Message)}</div>
-                        </div>
-                        {metaHtml}
-                    {baseCardEnd}
-                </body></html>";
-
-                // Send confirmation to user
-                var confirmContent = new EmailContent($"Thanks for your inquiry • {dealerName}")
-                {
-                    Html = confirmHtml,
-                    PlainText = $"Hi {userName},\n\nThanks for your inquiry. We received your message and will get back to you soon.\n\n--\nFuhrent"
-                };
-                var confirmMsg = new EmailMessage(
+                var userMsg = new EmailMessage(
                     senderAddress: fromAddress,
-                    content: confirmContent,
-                    recipients: new EmailRecipients(new List<EmailAddress> { new EmailAddress(body.UserEmail!) })
+                    content: new EmailContent("Thank You for Your Inquiry – Forest Lake Auto / Ice Castle USA")
+                    {
+                        PlainText = $"Hi {name},\n\nWe received your inquiry and will contact you soon.\n\nMessage:\n{inquiry.Message}\nPhone: {inquiry.Phone}\nVIN: {inquiry.Vin}\n\nThank you,\nForest Lake Auto Truck & Trailer Sales\n{phone}\n{address}",
+                        Html = userHtml
+                    },
+                    recipients: new EmailRecipients(new List<EmailAddress> { new EmailAddress(inquiry.UserEmail) })
                 );
-                confirmMsg.ReplyTo.Add(new EmailAddress(salesAddress));
 
-                // Send notification to sales
-                var salesContent = new EmailContent($"New submission • {dealerName}")
-                {
-                    Html = salesHtml,
-                    PlainText = $"New submission from {userName} <{body.UserEmail}> at {submittedUtc}.\n\nMessage:\n{body.Message}"
-                };
+                // ----------- SALES EMAIL -----------
+                var salesHtml = $@"
+                <html>
+                <body style='font-family:Segoe UI,Arial,sans-serif;background:#f8f8f8;padding:0;margin:0;'>
+                    <div style='max-width:600px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #eee;'>
+                        <div style='background:linear-gradient(90deg,{red} 0%,{blue} 100%);padding:24px;text-align:center;'>
+                            <img src='{logoUrl}' alt='Ice Castle USA' style='max-width:180px;margin-bottom:10px;'/>
+                            <h2 style='color:#fff;margin:0;'>New Customer Inquiry</h2>
+                        </div>
+                        <div style='padding:28px 24px 18px 24px;'>
+                            <p><b>From:</b> {WebUtility.HtmlEncode(inquiry.UserEmail)}</p>
+                            <p><b>Name:</b> {name}</p>
+                            <p><b>Phone:</b> {phoneText}</p>
+                            <p><b>VIN / Unit ID:</b> {vin}</p>
+                            {tradeInHtml}
+                            <div style='margin-top:18px;background:#fafafa;padding:12px;border-radius:8px;border:1px solid #eee;'>
+                                <b>Message:</b><br>{message}
+                            </div>
+                        </div>
+                        <div style='background:#222;color:#fff;padding:18px;text-align:center;font-size:14px;'>
+                            <p style='margin:0;'><b>Forest Lake Auto Truck & Trailer Sales</b></p>
+                            <p style='margin:0;'>{address}</p>
+                            <p style='margin:0;'>{phone}</p>
+                        </div>
+                    </div>
+                </body></html>";
+
                 var salesMsg = new EmailMessage(
                     senderAddress: fromAddress,
-                    content: salesContent,
+                    content: new EmailContent($"New Inquiry from {name} ({inquiry.UserEmail})")
+                    {
+                        PlainText = $"New inquiry received:\n\nName: {inquiry.Name}\nEmail: {inquiry.UserEmail}\nPhone: {inquiry.Phone}\nVIN: {inquiry.Vin}\n\nMessage:\n{inquiry.Message}\n\nForest Lake Auto Truck & Trailer Sales",
+                        Html = salesHtml
+                    },
                     recipients: new EmailRecipients(new List<EmailAddress> { new EmailAddress(salesAddress) })
                 );
-                salesMsg.ReplyTo.Add(new EmailAddress(body.UserEmail!));
 
-                _logger.LogInformation(
-                    "Inquiry email send starting invId={invId} from={from} toUser={toUser} toSales={toSales} subjUserLen={s1} subjSalesLen={s2}",
-                    invocationId, fromAddress, body.UserEmail, salesAddress,
-                    confirmContent.Subject?.Length ?? 0, salesContent.Subject?.Length ?? 0);
-
-                // Fire both sends (no need to block until completed; start and return ids)
-                EmailSendOperation confirmOp = await client.SendAsync(WaitUntil.Started, confirmMsg);
-                EmailSendOperation salesOp = await client.SendAsync(WaitUntil.Started, salesMsg);
-
-                _logger.LogInformation(
-                    "Inquiry email send accepted invId={invId} confirmOpId={cid} salesOpId={sid}",
-                    invocationId, confirmOp.Id, salesOp.Id);
+                // Fire-and-forget: send both emails in the background
+                Task.Run(() =>
+                {
+                    try { client.Send(WaitUntil.Completed, userMsg); } catch (Exception ex) { _logger.LogError(ex, "User email send failed"); }
+                });
+                Task.Run(() =>
+                {
+                    try { client.Send(WaitUntil.Completed, salesMsg); } catch (Exception ex) { _logger.LogError(ex, "Sales email send failed"); }
+                });
 
                 res.StatusCode = HttpStatusCode.Accepted;
                 res.Headers.Add("Content-Type", "application/json; charset=utf-8");
                 await res.WriteStringAsync(JsonSerializer.Serialize(new
                 {
                     ok = true,
-                    confirmOperationId = confirmOp.Id,
-                    salesOperationId = salesOp.Id
-                }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
-
-                _logger.LogInformation("Inquiry response sent invId={invId} status=202", invocationId);
+                    message = "Inquiry received. Email delivery is processed asynchronously."
+                }));
                 return res;
             }
             catch (JsonException)
             {
-                // Invalid JSON payload
-                _logger.LogWarning("Inquiry invalid JSON invId={invId}", executionContext?.InvocationId);
-                return await BadRequest(res, "Invalid JSON. Send application/json with at least userEmail and message fields.");
+                return await BadRequest(res, "Invalid JSON format.");
             }
-            catch (RequestFailedException rfe)
+            catch (RequestFailedException ex)
             {
-                _logger.LogError(rfe, "Inquiry email send failed invId={invId}: {code} {msg}", executionContext?.InvocationId, rfe.ErrorCode, rfe.Message);
-                return await Error(res, "Failed to send email. Please try again later.");
+                _logger.LogError(ex, "Azure Email Service failed.");
+                return await Error(res, $"Failed to send email: {ex.Message}");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "SendInquiry failed invId={invId}", executionContext?.InvocationId);
+                _logger.LogError(ex, "Unhandled exception in SendInquiry");
                 return await Error(res, ex.Message);
             }
-        }
-
-        private static string Truncate(string? s, int max)
-        {
-            if (string.IsNullOrEmpty(s)) return string.Empty;
-            return s.Length <= max ? s : s.Substring(0, max);
-        }
-
-        private static bool TryGetCaseInsensitiveString(JsonElement obj, string name, out string? value)
-        {
-            value = null;
-            if (obj.ValueKind != JsonValueKind.Object) return false;
-            foreach (var prop in obj.EnumerateObject())
-            {
-                if (string.Equals(prop.Name, name, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (prop.Value.ValueKind == JsonValueKind.String)
-                    {
-                        value = prop.Value.GetString();
-                        return true;
-                    }
-                    // If not a string, fallback to JSON text representation
-                    value = prop.Value.ToString();
-                    return true;
-                }
-            }
-            return false;
         }
 
         private static void AddCors(HttpResponseData res)
@@ -305,10 +234,8 @@ namespace flatt_functions
             res.Headers.Add("Access-Control-Allow-Origin", "*");
             res.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
             res.Headers.Add("Access-Control-Allow-Headers", "Content-Type");
-            // Explicitly disable caching for inquiry responses
             res.Headers.Add("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
             res.Headers.Add("Pragma", "no-cache");
-            // Expires must be a valid HTTP-date; some frameworks reject "0"
             res.Headers.Add("Expires", "Thu, 01 Jan 1970 00:00:00 GMT");
         }
 

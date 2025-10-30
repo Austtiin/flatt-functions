@@ -509,7 +509,7 @@ Limits and guarantees:
 
 
 ### 24. Send Inquiry Email
-**Purpose:** Accepts a customer inquiry and sends two branded emails via Azure Communication Services (ACS): a confirmation to the customer and a notification to sales.
+**Purpose:** Accepts a customer inquiry and sends branded emails via Azure Communication Services (ACS) to both the user and your sales recipient. Supports file attachments.
 
 **Endpoint:** `POST /inquiries`
 
@@ -517,46 +517,67 @@ Limits and guarantees:
 - `Content-Type: application/json` (required)
 
 **Request Body:**
+
 ```json
 {
   "userEmail": "customer@example.com",           // required
   "message": "I'm interested in this unit.",      // required
-  "subject": "Inquiry about stock #VH123",        // optional
-  "name": "Jane Doe",                            // optional
-  "phone": "+1 (555) 123-4567",                 // optional
-  "unitId": 145,                                  // optional
+  "name": "John Doe",                            // optional
+  "phone": "651-555-1234",                      // optional
   "vin": "1FTFW1E50LFA12345",                   // optional
-  "meta": {                                       // optional, object of key/value pairs
-    "stockNo": "VH123",
-    "source": "website"
-  }
+  "tradeIn": {                                   // optional
+    "year": "2018",
+    "make": "Ford",
+    "model": "F-150",
+    "mileageOrHours": "42,000",
+    "condition": "Good",
+      // images field removed
+  },
+  "attachments": [                                // optional
+    {
+      "name": "brochure.pdf",                    // required: filename
+      "contentType": "application/pdf",          // required: MIME type
+      "contentBase64": "JVBERi0xLjQKJcfs..."     // required: base64-encoded file content
+    }
+  ]
 }
 ```
 
 **Required fields:**
-- `userEmail` (string): Customer's email address. Used for confirmation and Reply-To.
+
+- `userEmail` (string): Customer's email address. Used in the email body.
 - `message` (string): Inquiry message. Alias: `body` (case-insensitive).
 
 **Optional fields:**
-- `subject` (string): Custom subject line for emails.
-- `name` (string): Customer name.
-- `phone` (string): Customer phone number.
-- `unitId` (integer): Inventory unit reference.
-- `vin` (string): Vehicle VIN reference.
-- `meta` (object): Additional details as key/value pairs (shown in email table).
+- `name` (string): Customer's name.
+- `phone` (string): Customer's phone number.
+- `vin` (string): VIN or unit ID.
+- `tradeIn` (object): Trade-in details (all fields optional):
+  - `year` (string): Year of trade-in vehicle.
+  - `make` (string): Make of trade-in vehicle.
+  - `model` (string): Model of trade-in vehicle.
+  - `condition` (string): Condition description.
+  // images field removed
+- `attachments` (array): List of files to attach. Each must include:
+  - `name` (string): Filename as shown to recipient.
+  - `contentType` (string): MIME type (e.g., `application/pdf`, `image/png`).
+  - `contentBase64` (string): Base64-encoded file content.
 
 **Behavior:**
-- Sends two emails using ACS Email:
-  - Confirmation to the user from your configured `EmailFrom`. Reply-To is set to your `SendToEmail`.
-  - Notification to `SendToEmail`. Reply-To is set to the user’s email.
-- Emails include branding, dealership contact/hours, and a table of provided details/meta.
+
+- Sends a confirmation email to the user (branded, with dealership info, hours, contact, and their message).
+- Sends a notification email to your sales recipient (branded, with inquiry details).
+- If attachments are provided, they are included in both emails.
 - The HTTP response includes strict no-cache headers.
 
 **Response (202 Accepted):**
+
 ```json
 {
   "ok": true,
-  "confirmOperationId": "<guid>",
+  "userStatus": "Succeeded",
+  "userOperationId": "<guid>",
+  "salesStatus": "Succeeded",
   "salesOperationId": "<guid>"
 }
 ```
@@ -565,35 +586,27 @@ Limits and guarantees:
 ```
 Content-Type: application/json; charset=utf-8
 Access-Control-Allow-Origin: *
-Access-Control-Allow-Methods: GET, POST, OPTIONS
-Access-Control-Allow-Headers: Content-Type
 Cache-Control: no-store, no-cache, must-revalidate, max-age=0
 Pragma: no-cache
-Expires: Thu, 01 Jan 1970 00:00:00 GMT
-```
-
-**Error Responses:**
 - `400` when `userEmail` or `message` is missing: `{ "error": true, "message": "userEmail and message are required." }`
 - `500` when email configuration is missing or send fails: `{ "error": true, "message": "Failed to send email. Please try again later." }`
 
 #### Request/response contract
 
 - Request must be valid JSON with `Content-Type: application/json`.
-- On success, the API returns HTTP 202 with two ACS operation IDs. These IDs can be used to query ACS for delivery status if needed.
 - Responses include CORS and strict no-cache headers to prevent client/CDN caching.
 
 #### Example (curl)
 
+
 ```bash
-curl -X POST "https://your-function-app.azurewebsites.net/api/inquiries" \
-  -H "Content-Type: application/json" \
-  -d '{
-        "userEmail": "customer@example.com",
-        "message": "I have a question about this unit",
-        "subject": "Website inquiry",
-        "name": "Jane Doe",
-        "phone": "",
-        "meta": { "type": "contact", "source": "website" }
+        "attachments": [
+          {
+            "name": "brochure.pdf",
+            "contentType": "application/pdf",
+            "contentBase64": "JVBERi0xLjQKJcfs..."
+          }
+        ]
       }'
 ```
 
@@ -612,14 +625,9 @@ curl -X POST "https://your-function-app.azurewebsites.net/api/inquiries" \
 }
 ```
 
-**Valid Status Values:**
-- `available`
 - `pending`
 - `sold`
 - `reserved`
-- `maintenance`
-
-**Success Response:**
 ```json
 {
   "success": true,
