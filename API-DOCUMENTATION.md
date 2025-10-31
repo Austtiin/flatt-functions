@@ -305,6 +305,102 @@ This document provides a comprehensive list of all API endpoints with expected i
 ```
 
 
+## Inquiry Email Endpoint
+
+### Send Inquiry (Queue-based email delivery)
+Purpose: Accept customer inquiries and enqueue them for background email delivery to the customer and sales.
+
+Endpoint: POST /inquiries
+
+Behavior:
+- Validates minimal fields, enqueues a message to the inquiries queue, and returns 202 Accepted with a correlation ID.
+- A queue-triggered function processes the message, sending two emails via Azure Communication Services (ACS): one to the customer and one to sales.
+- Retries: Automatic retries on transient failures; poison-queue handling on repeated failure.
+
+Request Body (JSON):
+Required
+- userEmail: string (customer's email)
+- message: string (free-form text)
+
+Optional (recommended)
+- name: string (customer's name)
+- phone: string
+- unitId: number (internal Unit ID)
+- vin: string
+- subject: string
+- tradeIn: object
+  - year, make, model, mileageOrHours, condition, images[]
+- meta: object for additional “Item Information” rows
+  - Item: object (recommended) containing key/value pairs rendered as a table of rows in the email
+
+Example Request
+{
+  "userEmail": "customer@example.com",
+  "name": "Jane Doe",
+  "phone": "651-555-1212",
+  "message": "I’m interested in this vehicle. Is it still available?",
+  "unitId": 145,
+  "vin": "1FTFW1E50LFA12345",
+  "subject": "Inquiry: 2020 Ford F-150",
+  "tradeIn": {
+    "year": "2016",
+    "make": "Chevy",
+    "model": "Silverado",
+    "mileageOrHours": "85,000",
+    "condition": "Good"
+  },
+  "meta": {
+    "Item": {
+      "Stock #": "VH001",
+      "Make": "Ford",
+      "Model": "F-150",
+      "Year": "2020",
+      "Trim": "XLT",
+      "Price": "$35,000",
+      "Link": "https://icecastleusa.com/inventory/VH001"
+    },
+    "Source": "Website",
+    "Campaign": "Fall Promo"
+  }
+}
+
+Success Response
+Status: 202 Accepted
+{
+  "ok": true,
+  "message": "Inquiry received. Email delivery will be processed asynchronously.",
+  "id": "<correlationId>"
+}
+
+Error Responses
+400 Bad Request
+{
+  "error": true,
+  "message": "userEmail and message fields are required."
+}
+
+500 Internal Server Error
+{
+  "error": true,
+  "message": "<error>"
+}
+
+Email Rendering
+- Customer Information appears in the email header area (Name, Email, Phone) and the message body.
+- Trade-In Information, when provided, is rendered as a table.
+- Item Information is rendered as a separate table with rows derived from:
+  - unitId and vin (when provided)
+  - meta.Item object (recommended) — each property becomes a row
+  - Other simple meta key/value pairs are also rendered as rows
+
+Operational Notes
+- Messaging: Azure Storage Queue (inquiry-email-service)
+- Max message size: ~64 KB. If you need more data, include a link in meta.Item instead.
+- Retries & Poison: The processor automatically retries transient failures. After max retry attempts, failed messages are moved to the poison queue (inquiry-email-service-poison).
+- Deletion semantics: The queue message is deleted automatically after the function completes successfully (no exception). If the function throws, the message is returned to the queue and retried.
+
+---
+
 ## Image Management Endpoints
 
 Images are stored in Azure Blob Storage under a VIN-based folder using a path prefix. The standard layout is:

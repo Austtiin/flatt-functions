@@ -22,6 +22,10 @@
         "X-Content-Type-Options": "nosniff",
         "X-Frame-Options": "DENY"
       }
+    },
+    "queues": {
+      "maxDequeueCount": 5,
+      "visibilityTimeout": "00:00:30"
     }
   },
   "functionTimeout": "00:05:00",
