@@ -38,6 +38,7 @@ namespace flatt_functions
                 _logger.LogError("Available configuration keys: {keys}", 
                     string.Join(", ", configuration.AsEnumerable().Select(x => x.Key)));
                 throw new InvalidOperationException("SqlConnectionString not set in configuration.");
+            
             }
             
             // Log connection string details (safely)

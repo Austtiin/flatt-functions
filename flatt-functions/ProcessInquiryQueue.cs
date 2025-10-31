@@ -218,7 +218,9 @@ namespace flatt_functions
                             <p style='margin:0;color:#bbb;font-size:12px;'>You received this email because you contacted Forest Lake Auto Truck & Trailer Sales. This message is not a sales contract. © {year} Forest Lake Auto.</p>
                         </div>
                     </div>
-                </body></html>";
+                </body></html>"; 
+                
+
 
                 var userMsg = new EmailMessage(
                     senderAddress: fromAddress,
@@ -243,6 +245,8 @@ namespace flatt_functions
                                 <a href='{siteUrl2}' style='display:inline-block;color:#fff;text-decoration:none;font-size:14px;font-weight:700;margin:0 10px;'>ForestLakeAuto.com</a>
                                 <span style='display:inline-block;color:#ffffff88;font-size:14px;margin:0 6px;'>|</span>
                                 <a href='tel:+16512725474' style='display:inline-block;color:#fff;text-decoration:none;font-size:14px;font-weight:700;margin:0 10px;'>Call {phone}</a>
+                            </div>
+                            <div>
                             </div>
                             <div style='color:#fff;opacity:0.85;font-size:12px;margin-top:6px;'>{tagline}</div>
                         </div>
