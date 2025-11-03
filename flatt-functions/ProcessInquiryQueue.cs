@@ -162,46 +162,65 @@ namespace flatt_functions
 
                     if (rows.Count > 0)
                     {
-                        itemInfoHtml = "<div style='margin-top:24px;'><h3 style='color:#c40000;margin-bottom:8px;'>Unit Information</h3><table style='width:100%;border-collapse:collapse;'>" + string.Join(string.Empty, rows) + "</table></div>";
+                        itemInfoHtml = "<div style='margin-top:24px;'><h3 style='color:#c40000;margin-bottom:8px;'>Information</h3><table style='width:100%;border-collapse:collapse;'>" + string.Join(string.Empty, rows) + "</table></div>";
                     }
                 }
 
                 // ----------- USER EMAIL -----------
-                var userHtml = $@"
-                <html>
-                <body style='font-family:Segoe UI,Arial,sans-serif;background:#f8f8f8;padding:0;margin:0;'>
-                    <div style='max-width:600px;margin:24px auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #eee;'>
-                        <!-- Brand Nav Header (no images) -->
-                        <div style='background:linear-gradient(90deg,{red} 0%,{blue} 100%);padding:14px 16px;text-align:center;'>
+               var userHtml = $@"
+                <html lang='en'>
+                <head>
+                <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+                <meta charset='UTF-8'>
+                <title>We’ve received your inquiry — Forest Lake Auto</title>
+                </head>
+                <body style='margin:0;padding:0;background-color:#f8f8f8;font-family:Segoe UI,Arial,sans-serif;color:#333;'>
+                <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='background-color:#f8f8f8;margin:0;padding:24px 0;'>
+                    <tr>
+                    <td align='center'>
+                        <table role='presentation' cellpadding='0' cellspacing='0' border='0' width='100%' style='max-width:600px;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #ddd;box-shadow:0 4px 10px rgba(0,0,0,0.05);'>
+
+                        <!-- Header -->
+                        <tr>
+                            <td style='background:linear-gradient(90deg,#c40000 0%,#002b80 100%);padding:14px 16px;text-align:center;'>
                             <div style='font-size:0;'>
-                                <a href='{siteUrl1}' style='display:inline-block;color:#fff;text-decoration:none;font-size:14px;font-weight:700;margin:0 10px;'>IceCastleUSA.com</a>
-                                <span style='display:inline-block;color:#ffffff88;font-size:14px;margin:0 6px;'>|</span>
-                                <a href='{siteUrl2}' style='display:inline-block;color:#fff;text-decoration:none;font-size:14px;font-weight:700;margin:0 10px;'>ForestLakeAuto.com</a>
-                                <span style='display:inline-block;color:#ffffff88;font-size:14px;margin:0 6px;'>|</span>
-                                <a href='tel:+16512725474' style='display:inline-block;color:#fff;text-decoration:none;font-size:14px;font-weight:700;margin:0 10px;'>Call {phone}</a>
+                                <a href='{siteUrl1}' style='display:inline-block;color:#fff;text-decoration:none;font-size:15px;font-weight:700;margin:0 10px;'>IceCastleUSA.com</a>
+                                <span style='display:inline-block;color:#ffffff88;font-size:15px;margin:0 6px;'>|</span>
+                                <a href='{siteUrl2}' style='display:inline-block;color:#fff;text-decoration:none;font-size:15px;font-weight:700;margin:0 10px;'>ForestLakeAuto.com</a>
+                                <span style='display:inline-block;color:#ffffff88;font-size:15px;margin:0 6px;'>|</span>
+                                <a href='tel:+16512725474' style='display:inline-block;color:#fff;text-decoration:none;font-size:15px;font-weight:700;margin:0 10px;'>Call {phone}</a>
                             </div>
-                            <div style='color:#fff;opacity:0.85;font-size:12px;margin-top:6px;'>{tagline}</div>
-                        </div>
+                            <div style='color:#fff;opacity:0.85;font-size:13px;margin-top:6px;'>{tagline}</div>
+                            </td>
+                        </tr>
 
-                        <div style='padding:22px 20px 18px 20px;line-height:1.55;'>
-                            <h2 style='margin:0 0 6px 0;color:{blue};font-size:20px;'>We’ve received your inquiry</h2>
-                            <p style='margin:0 0 12px 0;color:#333;'>Hi {name},</p>
-                            <p style='margin:0 0 12px 0;color:#333;'>Thanks for reaching out to Forest Lake Auto Truck & Trailer Sales. We’ve received your message and a team member will contact you shortly. Below is a confirmation of what you submitted.</p>
+                        <!-- Body -->
+                        <tr>
+                            <td style='padding:24px 20px;line-height:1.6;font-size:15px;'>
+                            <h2 style='margin:0 0 8px 0;color:{blue};font-size:22px;'>We’ve received your inquiry</h2>
+                            <p style='margin:0 0 12px 0;'>Hi {name},</p>
+                            <p style='margin:0 0 12px 0;'>Thanks for reaching out to Forest Lake Auto Truck & Trailer Sales! We appreciate your interest — a member of our team will contact you soon to discuss your inquiry.</p>
 
-                            <div style='margin:14px 0 0 0;background:#fafafa;padding:12px;border-radius:8px;border:1px solid #eee;'>
-                                <p style='margin:0 0 8px 0;'><b>Message</b><br>{message}</p>
-                                <p style='margin:0 0 6px 0;'><b>Phone:</b> {phoneText}</p>
-                                <p style='margin:0 0 6px 0;'><b>VIN / Unit ID:</b> {vin}</p>
+                            <div style='margin:16px 0;background:#fafafa;padding:14px;border-radius:8px;border:1px solid #eee;'>
+                                <p style='margin:0 0 8px 0;'><strong>Message</strong><br>{message}</p>
+                                <p style='margin:0 0 6px 0;'><strong>Phone:</strong> {phoneText}</p>
+                                <p style='margin:0 0 6px 0;'><strong>VIN / Unit ID:</strong> {vin}</p>
                                 <div style='height:1px;background:{blue};opacity:0.12;margin:12px 0;'></div>
                                 {tradeInHtml}
                                 {itemInfoHtml}
                             </div>
 
-                            <p style='margin:14px 0 0 0;color:#444;font-size:14px;'>All information subject to change. For urgent questions, call us at <b>{phone}</b>.</p>
-                        </div>
+                            <p style='margin:16px 0 0 0;font-size:14px;color:#444;'>
+                                Details are provided as a reference and may change without notice.<br>
+                                For urgent questions, call us directly at <strong>{phone}</strong>.
+                            </p>
+                            </td>
+                        </tr>
 
-                        <div style='background:#f3f3f3;padding:12px 14px;text-align:center;font-size:14px;color:#333;'>
-                            <b>Forest Lake Auto Truck & Trailer Sales</b>
+                        <!-- Footer Links -->
+                        <tr>
+                            <td style='background:#f3f3f3;padding:14px;text-align:center;font-size:15px;color:#333;'>
+                            <strong>Forest Lake Auto Truck & Trailer Sales</strong>
                             <div style='margin-top:6px;'>
                                 <a href='tel:+16512725474' style='color:{blue};text-decoration:none;margin:0 8px;'>{phone}</a>
                                 <span style='color:#888;'>|</span>
@@ -209,16 +228,36 @@ namespace flatt_functions
                                 <span style='color:#888;'>|</span>
                                 <a href='{siteUrl2}' style='color:{blue};text-decoration:none;margin:0 8px;'>ForestLakeAuto.com</a>
                             </div>
-                        </div>
+                            </td>
+                        </tr>
 
-                        <div style='background:#222;color:#fff;padding:16px 14px;text-align:center;font-size:13px;line-height:1.5;'>
-                            <p style='margin:0 0 4px 0;'><b>Forest Lake Auto Truck & Trailer Sales</b></p>
-                            <p style='margin:0 0 2px 0;'>{address}</p>
+                        <!-- Legal Footer -->
+                        <tr>
+                            <td style='background:#222;color:#fff;padding:18px 14px;text-align:center;font-size:14px;line-height:1.6;'>
+                            <p style='margin:0 0 6px 0;'><strong>Forest Lake Auto Truck & Trailer Sales</strong></p>
+                            <p style='margin:0 0 4px 0;'>{address}</p>
                             <p style='margin:0 0 6px 0;'>{phone}</p>
-                            <p style='margin:0;color:#bbb;font-size:12px;'>You received this email because you contacted Forest Lake Auto Truck & Trailer Sales. This message is not a sales contract. © {year} Forest Lake Auto.</p>
-                        </div>
-                    </div>
-                </body></html>"; 
+                            <p style='margin:0 0 8px 0;color:#bbb;font-size:13px;'>
+                                You received this email because you contacted Forest Lake Auto Truck & Trailer Sales.<br>
+                                This message is not a sales contract.
+                            </p>
+                            <p style='margin:0;color:#bbb;font-size:13px;'>
+                                Your information will not be shared or sold.<br>
+                                For more details, visit our 
+                                <a href='https://forestlakeauto.com/privacy' style='color:#fff;text-decoration:underline;'>Privacy Policy</a>.
+                            </p>
+                            <p style='margin:6px 0 0 0;color:#aaa;font-size:12px;'>© {year} Forest Lake Auto. All rights reserved.</p>
+                            </td>
+                        </tr>
+
+                        </table>
+                    </td>
+                    </tr>
+                </table>
+                </body>
+                </html>";
+
+ 
                 
 
 
