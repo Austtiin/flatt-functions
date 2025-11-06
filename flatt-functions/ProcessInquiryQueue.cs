@@ -101,6 +101,7 @@ namespace flatt_functions
                     bool hasTradeInInfo = !string.IsNullOrWhiteSpace(ti.Year) || !string.IsNullOrWhiteSpace(ti.Make) || !string.IsNullOrWhiteSpace(ti.Model) || !string.IsNullOrWhiteSpace(ti.MileageOrHours) || !string.IsNullOrWhiteSpace(ti.Condition);
                     if (hasTradeInInfo)
                     {
+                        
                         tradeInHtml += "<div style='margin-top:24px;'><h3 style='color:#c40000;margin-bottom:8px;'>Trade-In Information</h3><table style='width:100%;border-collapse:collapse;'>";
                         if (!string.IsNullOrWhiteSpace(ti.Year)) tradeInHtml += $"<tr><td style='padding:6px 8px;color:#0033a0;font-weight:600;'>Year</td><td style='padding:6px 8px;'>{WebUtility.HtmlEncode(ti.Year)}</td></tr>";
                         if (!string.IsNullOrWhiteSpace(ti.Make)) tradeInHtml += $"<tr><td style='padding:6px 8px;color:#0033a0;font-weight:600;'>Make</td><td style='padding:6px 8px;'>{WebUtility.HtmlEncode(ti.Make)}</td></tr>";
@@ -257,10 +258,6 @@ namespace flatt_functions
                 </body>
                 </html>";
 
- 
-                
-
-
                 var userMsg = new EmailMessage(
                     senderAddress: fromAddress,
                     content: new EmailContent("We’ve received your inquiry — Forest Lake Auto")
@@ -367,3 +364,4 @@ namespace flatt_functions
         }
     }
 }
+
