@@ -80,6 +80,8 @@ namespace flatt_functions
 
                 res.StatusCode = HttpStatusCode.OK;
                 res.Headers.Add("Content-Type", "application/json; charset=utf-8");
+                // Cache image listings for 30 days (rarely changes)
+                res.Headers.Add("Cache-Control", "public, max-age=2592000, s-maxage=2592000");
                 await res.WriteStringAsync(JsonSerializer.Serialize(sorted, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
                 return res;
             }
@@ -119,6 +121,8 @@ namespace flatt_functions
                 var redirectUrl = BuildPublicUrl(container, blobPath, name, vin);
                 res.StatusCode = HttpStatusCode.Redirect;
                 res.Headers.Add("Location", redirectUrl);
+                // Allow clients and CDNs to cache the redirect/target for 30 days
+                res.Headers.Add("Cache-Control", "public, max-age=2592000, s-maxage=2592000");
                 return res;
             }
             catch (Exception ex)

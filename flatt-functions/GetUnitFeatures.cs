@@ -73,6 +73,8 @@ namespace flatt_functions
 
                 response.StatusCode = HttpStatusCode.OK;
                 response.Headers.Add("Content-Type", "application/json; charset=utf-8");
+                // Cache unit features for 30 days (features rarely change)
+                response.Headers.Add("Cache-Control", "public, max-age=2592000, s-maxage=2592000");
                 var json = JsonSerializer.Serialize(results, new JsonSerializerOptions
                 {
                     PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -144,6 +146,8 @@ namespace flatt_functions
 
                 response.StatusCode = HttpStatusCode.OK;
                 response.Headers.Add("Content-Type", "application/json; charset=utf-8");
+                // Cache unit-specific features for 30 days
+                response.Headers.Add("Cache-Control", "public, max-age=2592000, s-maxage=2592000");
                 var json = JsonSerializer.Serialize(results, new JsonSerializerOptions
                 {
                     PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
