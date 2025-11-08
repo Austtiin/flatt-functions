@@ -196,6 +196,10 @@ namespace flatt_functions
                 var url = BuildPublicUrl(container, blobPath, newName, vin);
                 res.StatusCode = HttpStatusCode.Created;
                 res.Headers.Add("Content-Type", "application/json; charset=utf-8");
+                // Prevent caching for write operations
+                res.Headers.Add("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+                res.Headers.Add("Pragma", "no-cache");
+                res.Headers.Add("Expires", "Thu, 01 Jan 1970 00:00:00 GMT");
                 await res.WriteStringAsync(JsonSerializer.Serialize(new { name = newName, url }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
                 return res;
             }
@@ -239,6 +243,10 @@ namespace flatt_functions
                 var ok = await container.DeleteBlobIfExistsAsync(blobPath);
 
                 res.StatusCode = ok.Value ? HttpStatusCode.NoContent : HttpStatusCode.NotFound;
+                // Prevent caching for write operations
+                res.Headers.Add("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+                res.Headers.Add("Pragma", "no-cache");
+                res.Headers.Add("Expires", "Thu, 01 Jan 1970 00:00:00 GMT");
                 return res;
             }
             catch (Exception ex)
@@ -281,6 +289,10 @@ namespace flatt_functions
 
                     res.StatusCode = HttpStatusCode.OK;
                     res.Headers.Add("Content-Type", "application/json; charset=utf-8");
+                    // Prevent caching for write operations
+                    res.Headers.Add("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+                    res.Headers.Add("Pragma", "no-cache");
+                    res.Headers.Add("Expires", "Thu, 01 Jan 1970 00:00:00 GMT");
                     await res.WriteStringAsync(JsonSerializer.Serialize(new { oldName, newName, moved = false }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
                     return res;
                 }
@@ -315,6 +327,10 @@ namespace flatt_functions
 
                     res.StatusCode = HttpStatusCode.OK;
                     res.Headers.Add("Content-Type", "application/json; charset=utf-8");
+                    // Prevent caching for write operations
+                    res.Headers.Add("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+                    res.Headers.Add("Pragma", "no-cache");
+                    res.Headers.Add("Expires", "Thu, 01 Jan 1970 00:00:00 GMT");
                     await res.WriteStringAsync(JsonSerializer.Serialize(new { oldName, newName, moved = false }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
                     return res;
                 }
@@ -400,6 +416,10 @@ namespace flatt_functions
 
                 res.StatusCode = HttpStatusCode.OK;
                 res.Headers.Add("Content-Type", "application/json; charset=utf-8");
+                // Prevent caching for write operations
+                res.Headers.Add("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+                res.Headers.Add("Pragma", "no-cache");
+                res.Headers.Add("Expires", "Thu, 01 Jan 1970 00:00:00 GMT");
                 await res.WriteStringAsync(JsonSerializer.Serialize(new { oldName, newName, moved = true }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
                 return res;
             }

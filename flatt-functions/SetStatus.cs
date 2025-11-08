@@ -51,6 +51,11 @@ namespace flatt_functions
                 response.Headers.Add("Access-Control-Allow-Origin", "*");
                 response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
                 response.Headers.Add("Access-Control-Allow-Headers", "Content-Type");
+                
+                // Prevent caching for write operations
+                response.Headers.Add("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+                response.Headers.Add("Pragma", "no-cache");
+                response.Headers.Add("Expires", "Thu, 01 Jan 1970 00:00:00 GMT");
 
                 if (!int.TryParse(id, out int unitId))
                 {
