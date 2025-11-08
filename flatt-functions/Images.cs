@@ -159,8 +159,9 @@ namespace flatt_functions
                 {
                     incoming.Position = 0;
                     using var magick = new MagickImage(incoming);
-                    // Convert to WebP with quality 80
-                    magick.Quality = 80;
+                    // Convert to WebP with configurable quality (default 80)
+                    var imageQuality = int.TryParse(_configuration["ImageQuality"], out var quality) && quality > 0 && quality <= 100 ? quality : 80;
+                    magick.Quality = (uint)imageQuality;
                     magick.Write(webpStream, MagickFormat.WebP);
                 }
                 catch
