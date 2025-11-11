@@ -162,8 +162,8 @@ namespace flatt_functions
                 {
                     response.StatusCode = HttpStatusCode.OK;
                     response.Headers.Add("Content-Type", "text/html; charset=utf-8");
-                    // Cache stable inventory responses for 30 days
-                    response.Headers.Add("Cache-Control", "public, max-age=2592000, s-maxage=2592000");
+                    // Cache stable inventory responses for 10 minutes
+                    response.Headers.Add("Cache-Control", "public, max-age=600, s-maxage=600");
                     var html = GenerateHtmlResponse(responseData, tableName, schemaInfo, stopwatch.ElapsedMilliseconds);
                     await response.WriteStringAsync(html);
                 }
@@ -171,8 +171,8 @@ namespace flatt_functions
                 {
                     response.StatusCode = HttpStatusCode.OK;
                     response.Headers.Add("Content-Type", "application/json; charset=utf-8");
-                    // Cache stable inventory responses for 30 days
-                    response.Headers.Add("Cache-Control", "public, max-age=2592000, s-maxage=2592000");
+                    // Cache stable inventory responses for 10 minutes
+                    response.Headers.Add("Cache-Control", "public, max-age=600, s-maxage=600");
                     
                     var jsonOptions = new JsonSerializerOptions
                     {

@@ -70,6 +70,29 @@ namespace flatt_functions
                 if (inquiry == null || string.IsNullOrWhiteSpace(inquiry.UserEmail) || string.IsNullOrWhiteSpace(inquiry.Message))
                     return await BadRequest(res, "userEmail and message fields are required.");
 
+                // Check if email service is disabled (for DEV environment)
+                // In PROD, this environment variable should not be set, so service runs normally
+                var disableEmailService = Environment.GetEnvironmentVariable("DisableEmailService");
+                var isEmailServiceDisabled = !string.IsNullOrWhiteSpace(disableEmailService) && 
+                    (disableEmailService.Equals("true", StringComparison.OrdinalIgnoreCase) || 
+                     disableEmailService.Equals("1", StringComparison.OrdinalIgnoreCase));
+
+                if (isEmailServiceDisabled)
+                {
+                    var disabledCorrelationId = Guid.NewGuid().ToString("N");
+                    _logger.LogInformation("Inquiry received but email service disabled via DisableEmailService environment variable: CorrelationId={cid}, User={user}", disabledCorrelationId, inquiry.UserEmail);
+                    
+                    res.StatusCode = HttpStatusCode.Accepted;
+                    res.Headers.Add("Content-Type", "application/json; charset=utf-8");
+                    await res.WriteStringAsync(JsonSerializer.Serialize(new
+                    {
+                        ok = true,
+                        message = "Inquiry received. Email service is currently disabled in development environment.",
+                        id = disabledCorrelationId
+                    }));
+                    return res;
+                }
+
                 // Enqueue message for background processing
                 var storageConn = Environment.GetEnvironmentVariable("StorageConnection");
                 var queueUrl = Environment.GetEnvironmentVariable("InquiryQueueURL");

@@ -53,6 +53,20 @@ namespace flatt_functions
             FunctionContext context)
         {
             var dequeueCount = context.BindingContext.BindingData.TryGetValue("DequeueCount", out var dc) ? dc?.ToString() : "n/a";
+            
+            // Check if email service should be disabled (for DEV environment)
+            // In PROD, this environment variable should not be set, so service runs normally
+            var disableEmailService = Environment.GetEnvironmentVariable("DisableEmailService");
+            var isEmailServiceDisabled = !string.IsNullOrWhiteSpace(disableEmailService) && 
+                (disableEmailService.Equals("true", StringComparison.OrdinalIgnoreCase) || 
+                 disableEmailService.Equals("1", StringComparison.OrdinalIgnoreCase));
+
+            if (isEmailServiceDisabled)
+            {
+                _logger.LogInformation("Email service disabled via DisableEmailService environment variable - skipping queue message processing. DequeueCount={dc}, MessageLength={len}", dequeueCount, queueMessage?.Length ?? 0);
+                return; // Exit immediately without processing the message
+            }
+
             try
             {
                 var envelope = JsonSerializer.Deserialize<QueueEnvelope>(queueMessage, new JsonSerializerOptions
