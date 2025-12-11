@@ -15,6 +15,7 @@ namespace flatt_functions
     public class CheckStatus
     {
         private readonly ILogger<CheckStatus> _logger;
+
         private readonly IConfiguration _configuration;
         private readonly string _connectionString;
 
