@@ -376,8 +376,8 @@ namespace flatt_functions
                 string query;
                 if (hasTypeIdColumn)
                 {
-                    query = $"SELECT * FROM [{sanitizedTableName}] WHERE TypeID = @TypeID";
-                    _logger.LogInformation("📝 Executing filtered query: {query} (TypeID = 1)", query);
+                    query = $"SELECT * FROM [{sanitizedTableName}] WHERE TypeID IN (@TypeID1, @TypeID2)";
+                    _logger.LogInformation("📝 Executing filtered query: {query} (TypeID = 1 OR 3)", query);
                 }
                 else
                 {
@@ -389,7 +389,8 @@ namespace flatt_functions
                 using var command = new SqlCommand(query, connection);
                 if (hasTypeIdColumn)
                 {
-                    command.Parameters.AddWithValue("@TypeID", 1);
+                    command.Parameters.AddWithValue("@TypeID1", 1);
+                    command.Parameters.AddWithValue("@TypeID2", 3);
                 }
                 command.CommandTimeout = 30; // 30 second timeout
                 using var reader = await command.ExecuteReaderAsync();
@@ -435,7 +436,7 @@ namespace flatt_functions
                 }
                 else
                 {
-                    var filterMessage = hasTypeIdColumn ? " (filtered by TypeID = 1)" : "";
+                    var filterMessage = hasTypeIdColumn ? " (filtered by TypeID = 1 OR 3)" : "";
                     _logger.LogInformation("✅ Successfully retrieved {count} records from {tableName} in {ms}ms{filter}", 
                         results.Count, tableName, timer.ElapsedMilliseconds, filterMessage);
                 }
