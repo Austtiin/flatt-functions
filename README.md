@@ -11,6 +11,7 @@
   - [Data Management](#data-management)
   - [Health & Validation](#health--validation)
   - [Dashboard & Reports](#dashboard--reports)
+  - [AI Utilities](#ai-utilities)
 - [Data Models](#data-models)
 - [Error Handling](#error-handling)
 - [Development](#development)
@@ -322,6 +323,84 @@ Content-Type: application/json
 ```
 
 ---
+
+## 🤖 AI Utilities
+
+### Rewrite Description
+**Endpoint:** `POST /api/ai/rewrite`
+
+**Description:** Uses Azure OpenAI to rewrite an inventory description to be clear and professional, without adding features. Returns status stages (`received`, `loading`, `complete`) and includes the built prompt so the frontend can preview/edit.
+
+**Config Required:**
+- `openAIEndpoint` – Azure OpenAI endpoint (e.g., https://your-resource.openai.azure.com)
+- `openAIkey` – API key for the Azure OpenAI resource
+- `openAIDeployment` – Default model deployment name (e.g., `gpt-4o-mini`)
+
+**Request (JSON):**
+```json
+{
+  "description": "Sleeps 6, queen bed, dinette, great for families.",
+  "tone": "professional",
+  "maxWords": 120,
+  "model": "gpt-4o-mini",
+  "previewOnly": false
+}
+```
+
+Fields:
+- `description` (required): The original text to rewrite.
+- `tone` (optional): `professional|casual|neutral|sales` (default `professional`).
+- `maxWords` (optional): Target word count (default `120`).
+- `model` (optional): Deployment name to override `openAIDeployment`.
+- `previewOnly` (optional): If `true`, returns `promptBuilt` without calling AI.
+
+**Response (success):**
+```json
+{
+  "status": "complete",
+  "stages": [
+    { "status": "received", "at": "2025-12-28T20:44:00Z" },
+    { "status": "loading",  "at": "2025-12-28T20:44:00Z" },
+    { "status": "complete", "at": "2025-12-28T20:44:01Z" }
+  ],
+  "promptBuilt": "Rewrite the following inventory description to be:\n- Clear and professional\n- Easy for a customer to understand\n- No added features\n- Under 120 words\n\nDescription:\nSleeps 6, queen bed, dinette, great for families.",
+  "rewrittenText": "Spacious family-friendly unit with a comfortable queen bed and versatile dinette, designed for easy use and a clean, modern experience.",
+  "meta": { "tone": "professional", "maxWords": 120, "model": "gpt-4o-mini" }
+}
+```
+
+**Response (previewOnly):**
+```json
+{
+  "status": "complete",
+  "stages": [
+    { "status": "received", "at": "..." },
+    { "status": "complete", "at": "..." }
+  ],
+  "promptBuilt": "Rewrite the following inventory description to be:\n- Clear and professional\n- Easy for a customer to understand\n- No added features\n- Under 120 words\n\nDescription:\n...",
+  "meta": { "tone": "professional", "maxWords": 120 }
+}
+```
+
+**Errors:**
+```json
+{
+  "status": "error",
+  "stages": [{ "status": "received", "at": "..." }],
+  "error": { "message": "Field 'description' is required." }
+}
+```
+
+**Local Test:**
+```bash
+curl -X POST "http://localhost:7071/api/ai/rewrite" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "description": "Sleeps 6, queen bed, dinette, great for families.",
+        "tone": "professional",
+        "maxWords": 120
+      }'
+```
 
 ### 6. Update Existing Inventory
 **Endpoint:** `PUT /api/vehicles/{id}`

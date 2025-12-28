@@ -42,12 +42,29 @@ namespace flatt_functions
         {
             var res = req.CreateResponse();
             AddCors(res);
+            if (IsBlobDisabled())
+            {
+                res.StatusCode = HttpStatusCode.ServiceUnavailable;
+                res.Headers.Add("Content-Type", "application/json; charset=utf-8");
+                await res.WriteStringAsync(JsonSerializer.Serialize(new { ok = false, message = "Blob storage is disabled in development." }));
+                return res;
+            }
             try
             {
                 var vin = await GetVinForUnit(id);
                 if (string.IsNullOrWhiteSpace(vin))
                 {
-                    return await NotFound(res, $"UnitID {id} not found");
+                    // Dev-friendly fallback: allow explicit VIN via query
+                    var vinOverride = GetQuery(req, "vin");
+                    if (!string.IsNullOrWhiteSpace(vinOverride))
+                    {
+                        vin = vinOverride!.Trim();
+                        _logger.LogWarning("ListUnitImages: using VIN override from query for dev: {vin}", vin);
+                    }
+                    else
+                    {
+                        return await NotFound(res, $"UnitID {id} not found (provide ?vin=VIN in dev to override)");
+                    }
                 }
 
                 var container = ResolveContainerClient();
@@ -101,10 +118,29 @@ namespace flatt_functions
         {
             var res = req.CreateResponse();
             AddCors(res);
+            if (IsBlobDisabled())
+            {
+                res.StatusCode = HttpStatusCode.ServiceUnavailable;
+                res.Headers.Add("Content-Type", "application/json; charset=utf-8");
+                await res.WriteStringAsync(JsonSerializer.Serialize(new { ok = false, message = "Blob storage is disabled in development." }));
+                return res;
+            }
             try
             {
                 var vin = await GetVinForUnit(id);
-                if (string.IsNullOrWhiteSpace(vin)) return await NotFound(res, $"UnitID {id} not found");
+                if (string.IsNullOrWhiteSpace(vin))
+                {
+                    var vinOverride = GetQuery(req, "vin");
+                    if (!string.IsNullOrWhiteSpace(vinOverride))
+                    {
+                        vin = vinOverride!.Trim();
+                        _logger.LogWarning("GetUnitImage: using VIN override from query for dev: {vin}", vin);
+                    }
+                    else
+                    {
+                        return await NotFound(res, $"UnitID {id} not found (provide ?vin=VIN in dev to override)");
+                    }
+                }
 
                 var container = ResolveContainerClient();
                 if (container == null) return await NotFound(res, "Storage not configured");
@@ -140,6 +176,13 @@ namespace flatt_functions
         {
             var res = req.CreateResponse();
             AddCors(res);
+            if (IsBlobDisabled())
+            {
+                res.StatusCode = HttpStatusCode.ServiceUnavailable;
+                res.Headers.Add("Content-Type", "application/json; charset=utf-8");
+                await res.WriteStringAsync(JsonSerializer.Serialize(new { ok = false, message = "Blob storage is disabled in development." }));
+                return res;
+            }
             try
             {
                 var vin = await GetVinForUnit(id);
@@ -226,6 +269,13 @@ namespace flatt_functions
         {
             var res = req.CreateResponse();
             AddCors(res);
+            if (IsBlobDisabled())
+            {
+                res.StatusCode = HttpStatusCode.ServiceUnavailable;
+                res.Headers.Add("Content-Type", "application/json; charset=utf-8");
+                await res.WriteStringAsync(JsonSerializer.Serialize(new { ok = false, message = "Blob storage is disabled in development." }));
+                return res;
+            }
             try
             {
                 if (!IsValidImageFileName(name))
@@ -266,6 +316,13 @@ namespace flatt_functions
         {
             var res = req.CreateResponse();
             AddCors(res);
+            if (IsBlobDisabled())
+            {
+                res.StatusCode = HttpStatusCode.ServiceUnavailable;
+                res.Headers.Add("Content-Type", "application/json; charset=utf-8");
+                await res.WriteStringAsync(JsonSerializer.Serialize(new { ok = false, message = "Blob storage is disabled in development." }));
+                return res;
+            }
             try
             {
                 if (!IsValidImageFileName(oldName) || !IsValidImageFileName(newName))
@@ -465,7 +522,13 @@ namespace flatt_functions
                                     _configuration["ConnectionStrings:BlobContainerName"];
                 if (!string.IsNullOrWhiteSpace(containerName))
                 {
-                    return new BlobContainerClient(connString!, containerName!);
+                    var client = new BlobContainerClient(connString!, containerName!);
+                    // In dev/Azurite, ensure the container exists to avoid 404s
+                    if (connString!.IndexOf("UseDevelopmentStorage=true", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        try { client.CreateIfNotExists(); } catch { }
+                    }
+                    return client;
                 }
             }
 
@@ -549,6 +612,12 @@ namespace flatt_functions
             ext = ext.Trim();
             if (!ext.StartsWith('.')) ext = "." + ext;
             return ext.ToLowerInvariant();
+        }
+
+        private bool IsBlobDisabled()
+        {
+            var flag = _configuration["DisableBlobService"] ?? Environment.GetEnvironmentVariable("DisableBlobService");
+            return string.Equals(flag, "true", StringComparison.OrdinalIgnoreCase) || string.Equals(flag, "1", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsValidImageFileName(string name)
