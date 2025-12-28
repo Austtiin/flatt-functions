@@ -219,13 +219,75 @@ namespace flatt_functions
                     _logger.LogInformation("[RewriteDescription] Chat messages prepared - System message length: {sysLen}, User message length: {userLen}",
                         promptHeader.Length, input.Description.Length);
 
-                    var optionsChat = new ChatCompletionOptions();
-                    
-                    // Use the SDK approach (matches Azure documentation)
-                    _logger.LogInformation("[RewriteDescription] Using SDK ChatClient.CompleteChat for deployment: {deployment}", modelToUse);
-                    
-                    try
+                    // Check if stored completions should be enabled
+                    var enableStored =
+                        string.Equals(_configuration["AIStoreCompletions"], "true", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(_configuration["ConnectionStrings:AIStoreCompletions"], "true", StringComparison.OrdinalIgnoreCase);
+
+                    if (enableStored)
                     {
+                        // Use REST API to enable stored completions (store=true)
+                        _logger.LogInformation("[RewriteDescription] Using REST API with store=true for deployment: {deployment}", modelToUse);
+                        
+                        var http = _httpClientFactory.CreateClient();
+                        http.BaseAddress = baseUri;
+                        http.DefaultRequestHeaders.Remove("api-key");
+                        http.DefaultRequestHeaders.Add("api-key", key);
+
+                        var payload = new
+                        {
+                            model = modelToUse,
+                            store = true,
+                            messages = new object[]
+                            {
+                                new { role = "system", content = promptHeader },
+                                new { role = "user", content = $"Description:\n{input.Description}" }
+                            },
+                            metadata = new Dictionary<string, string>
+                            {
+                                ["feature"] = "rewriteDescription",
+                                ["tone"] = tone,
+                                ["maxWords"] = maxWords.ToString()
+                            }
+                        };
+
+                        var json = JsonSerializer.Serialize(payload);
+                        _logger.LogInformation("[RewriteDescription] Request payload prepared - Size: {size} bytes, store: true", json.Length);
+                        
+                        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+                        var restUrl = $"openai/v1/chat/completions";
+                        _logger.LogInformation("[RewriteDescription] Sending POST to: {url}", restUrl);
+                        
+                        var resp = await http.PostAsync(restUrl, content);
+                        var bodyText = await resp.Content.ReadAsStringAsync();
+                        
+                        _logger.LogInformation("[RewriteDescription] Response received - Status: {status} ({statusCode}), Body length: {bodyLen}",
+                            resp.StatusCode, (int)resp.StatusCode, bodyText?.Length ?? 0);
+
+                        if (resp.IsSuccessStatusCode)
+                        {
+                            using var doc = JsonDocument.Parse(bodyText);
+                            if (doc.RootElement.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
+                            {
+                                var choice0 = choices[0];
+                                if (choice0.TryGetProperty("message", out var msg) && msg.TryGetProperty("content", out var contentEl))
+                                {
+                                    rewritten = contentEl.GetString();
+                                }
+                            }
+                            _logger.LogInformation("[RewriteDescription] ✓ REST API completion succeeded with store=true - Content length: {len}", rewritten?.Length ?? 0);
+                        }
+                        else
+                        {
+                            throw new Exception($"REST API call failed: {(int)resp.StatusCode} {resp.StatusCode}. Body: {bodyText}");
+                        }
+                    }
+                    else
+                    {
+                        // Use SDK approach (simpler, no stored completions)
+                        _logger.LogInformation("[RewriteDescription] Using SDK ChatClient.CompleteChat for deployment: {deployment}", modelToUse);
+                        
+                        var optionsChat = new ChatCompletionOptions();
                         var chatResp = chatClient.CompleteChat(messages, optionsChat);
                         _logger.LogInformation("[RewriteDescription] SDK response received - Content parts: {count}", chatResp.Value.Content.Count);
                         
@@ -238,12 +300,6 @@ namespace flatt_functions
                         {
                             _logger.LogWarning("[RewriteDescription] SDK returned no content in response");
                         }
-                    }
-                    catch (Azure.RequestFailedException azureEx)
-                    {
-                        _logger.LogError(azureEx, "[RewriteDescription] ✗ Azure SDK request failed - Status: {status}, ErrorCode: {code}, Message: {message}",
-                            azureEx.Status, azureEx.ErrorCode, azureEx.Message);
-                        throw new Exception($"Azure OpenAI request failed: {azureEx.ErrorCode} - {azureEx.Message}. Please verify deployment '{modelToUse}' exists in your Azure OpenAI resource.", azureEx);
                     }
                 }
                 catch (Exception sdkEx)
