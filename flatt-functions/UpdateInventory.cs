@@ -141,6 +141,18 @@ namespace flatt_functions
                     return response;
                 }
                 
+                // DEBUG LOGGING - Log what data was received
+                _logger.LogInformation("📝 Update data received for UnitID {unitId}: VIN={vin}, Make={make}, Model={model}, Banner={banner}, StockNo={stockNo}, Year={year}, Price={price}, Status={status}", 
+                    unitId, 
+                    updateData.Vin ?? "NULL", 
+                    updateData.Make ?? "NULL", 
+                    updateData.Model ?? "NULL",
+                    updateData.Banner ?? "NULL",
+                    updateData.StockNo ?? "NULL",
+                    updateData.Year?.ToString() ?? "NULL",
+                    updateData.Price?.ToString() ?? "NULL",
+                    updateData.Status ?? "NULL");
+                
                 // Normalize VIN and StockNo to uppercase
                 if (!string.IsNullOrWhiteSpace(updateData.Vin))
                 {
@@ -322,46 +334,137 @@ namespace flatt_functions
             using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync();
             
-            var query = @"
+            // Build dynamic query to only update fields that are provided (not null)
+            var setClauses = new List<string>();
+            var command = new SqlCommand();
+            
+            // Always update UpdatedAt
+            setClauses.Add("[UpdatedAt] = GETDATE()");
+            
+            // Only add SET clauses for non-null properties
+            if (vehicle.Vin != null)
+            {
+                setClauses.Add("[VIN] = @VIN");
+                command.Parameters.AddWithValue("@VIN", vehicle.Vin);
+            }
+            
+            if (vehicle.StockNo != null)
+            {
+                setClauses.Add("[StockNo] = @StockNo");
+                command.Parameters.AddWithValue("@StockNo", vehicle.StockNo);
+            }
+            
+            if (vehicle.Make != null)
+            {
+                setClauses.Add("[Make] = @Make");
+                command.Parameters.AddWithValue("@Make", vehicle.Make);
+            }
+            
+            if (vehicle.Model != null)
+            {
+                setClauses.Add("[Model] = @Model");
+                command.Parameters.AddWithValue("@Model", vehicle.Model);
+            }
+            
+            if (vehicle.Year != null)
+            {
+                setClauses.Add("[Year] = @Year");
+                command.Parameters.AddWithValue("@Year", vehicle.Year);
+            }
+            
+            if (vehicle.Condition != null)
+            {
+                setClauses.Add("[Condition] = @Condition");
+                command.Parameters.AddWithValue("@Condition", vehicle.Condition);
+            }
+            
+            if (vehicle.Description != null)
+            {
+                setClauses.Add("[Description] = @Description");
+                command.Parameters.AddWithValue("@Description", vehicle.Description);
+            }
+            
+            if (vehicle.Category != null)
+            {
+                setClauses.Add("[Category] = @Category");
+                command.Parameters.AddWithValue("@Category", vehicle.Category);
+            }
+            
+            if (vehicle.TypeId != null)
+            {
+                setClauses.Add("[TypeID] = @TypeID");
+                command.Parameters.AddWithValue("@TypeID", vehicle.TypeId);
+            }
+            
+            if (vehicle.WidthCategory != null)
+            {
+                setClauses.Add("[WidthCategory] = @WidthCategory");
+                command.Parameters.AddWithValue("@WidthCategory", vehicle.WidthCategory);
+            }
+            
+            if (vehicle.SizeCategory != null)
+            {
+                setClauses.Add("[SizeCategory] = @SizeCategory");
+                command.Parameters.AddWithValue("@SizeCategory", vehicle.SizeCategory);
+            }
+            
+            if (vehicle.Price != null)
+            {
+                setClauses.Add("[Price] = @Price");
+                command.Parameters.AddWithValue("@Price", vehicle.Price);
+            }
+            
+            if (vehicle.Msrp != null)
+            {
+                setClauses.Add("[MSRP] = @MSRP");
+                command.Parameters.AddWithValue("@MSRP", vehicle.Msrp);
+            }
+            
+            if (vehicle.Status != null)
+            {
+                setClauses.Add("[Status] = @Status");
+                command.Parameters.AddWithValue("@Status", vehicle.Status);
+            }
+            
+            if (vehicle.Color != null)
+            {
+                setClauses.Add("[Color] = @Color");
+                command.Parameters.AddWithValue("@Color", vehicle.Color);
+            }
+            
+            if (vehicle.Banner != null)
+            {
+                setClauses.Add("[Banner] = @Banner");
+                command.Parameters.AddWithValue("@Banner", vehicle.Banner);
+            }
+            
+            // If no fields to update except UpdatedAt, just update UpdatedAt
+            if (setClauses.Count == 1)
+            {
+                _logger.LogWarning("⚠️ No fields to update for UnitID {unitId}", unitId);
+            }
+            
+            var query = $@"
                 UPDATE [Units] 
-                SET 
-                    [VIN] = COALESCE(@VIN, [VIN]),
-                    [StockNo] = COALESCE(@StockNo, [StockNo]),
-                    [Make] = COALESCE(@Make, [Make]),
-                    [Model] = COALESCE(@Model, [Model]),
-                    [Year] = COALESCE(@Year, [Year]),
-                    [Condition] = COALESCE(@Condition, [Condition]),
-                    [Description] = COALESCE(@Description, [Description]),
-                    [Category] = COALESCE(@Category, [Category]),
-                    [TypeID] = COALESCE(@TypeID, [TypeID]),
-                    [WidthCategory] = COALESCE(@WidthCategory, [WidthCategory]),
-                    [SizeCategory] = COALESCE(@SizeCategory, [SizeCategory]),
-                    [Price] = COALESCE(@Price, [Price]),
-                    [MSRP] = COALESCE(@MSRP, [MSRP]),
-                    [Status] = COALESCE(@Status, [Status]),
-                    [Color] = COALESCE(@Color, [Color]),
-                    [UpdatedAt] = GETDATE()
+                SET {string.Join(", ", setClauses)}
                 WHERE [UnitID] = @UnitID";
             
-            using var command = new SqlCommand(query, connection);
-            command.Parameters.AddWithValue("@UnitID", unitId);
-            command.Parameters.AddWithValue("@VIN", (object?)vehicle.Vin ?? DBNull.Value);
-            command.Parameters.AddWithValue("@StockNo", (object?)vehicle.StockNo ?? DBNull.Value);
-            command.Parameters.AddWithValue("@Make", (object?)vehicle.Make ?? DBNull.Value);
-            command.Parameters.AddWithValue("@Model", (object?)vehicle.Model ?? DBNull.Value);
-            command.Parameters.AddWithValue("@Year", (object?)vehicle.Year ?? DBNull.Value);
-            command.Parameters.AddWithValue("@Condition", (object?)vehicle.Condition ?? DBNull.Value);
-            command.Parameters.AddWithValue("@Description", (object?)vehicle.Description ?? DBNull.Value);
-            command.Parameters.AddWithValue("@Category", (object?)vehicle.Category ?? DBNull.Value);
-            command.Parameters.AddWithValue("@TypeID", (object?)vehicle.TypeId ?? DBNull.Value);
-            command.Parameters.AddWithValue("@WidthCategory", (object?)vehicle.WidthCategory ?? DBNull.Value);
-            command.Parameters.AddWithValue("@SizeCategory", (object?)vehicle.SizeCategory ?? DBNull.Value);
-            command.Parameters.AddWithValue("@Price", (object?)vehicle.Price ?? DBNull.Value);
-            command.Parameters.AddWithValue("@MSRP", (object?)vehicle.Msrp ?? DBNull.Value);
-            command.Parameters.AddWithValue("@Status", (object?)vehicle.Status ?? DBNull.Value);
-            command.Parameters.AddWithValue("@Color", (object?)vehicle.Color ?? DBNull.Value);
+            _logger.LogInformation("🔧 Executing UPDATE query for UnitID {unitId} with {count} field updates", unitId, setClauses.Count - 1);
+            _logger.LogDebug("SQL Query: {query}", query);
             
-            await command.ExecuteNonQueryAsync();
+            command.CommandText = query;
+            command.Connection = connection;
+            command.Parameters.AddWithValue("@UnitID", unitId);
+            
+            var rowsAffected = await command.ExecuteNonQueryAsync();
+            
+            if (rowsAffected != 1)
+            {
+                _logger.LogError("⚠️ CRITICAL: Expected to update 1 row but updated {count} rows for UnitID {unitId}!", rowsAffected, unitId);
+                throw new InvalidOperationException($"Update affected {rowsAffected} rows instead of 1. Database may be corrupted.");
+            }
+            
+            _logger.LogInformation("✅ Successfully updated {count} rows for UnitID {unitId}", rowsAffected, unitId);
         }
     }
 
@@ -393,5 +496,6 @@ namespace flatt_functions
         public string? Status { get; set; }
         public string? Description { get; set; }
         public string? Color { get; set; }
+        public string? Banner { get; set; }
     }
 }

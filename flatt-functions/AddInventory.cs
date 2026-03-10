@@ -446,13 +446,13 @@ namespace flatt_functions
                 INSERT INTO [Units] (
                     [VIN], [StockNo], [Make], [Model], [Year], [Condition], 
                     [Description], [Category], [TypeID], 
-                    [WidthCategory], [SizeCategory], [Price], [Status], [Color], [MSRP]
+                    [WidthCategory], [SizeCategory], [Price], [Status], [Color], [MSRP], [Banner]
                 )
                 OUTPUT INSERTED.UnitID
                 VALUES (
                     @VIN, @StockNo, @Make, @Model, @Year, @Condition, 
                     @Description, @Category, @TypeID, 
-                    @WidthCategory, @SizeCategory, @Price, @Status, @Color, @MSRP
+                    @WidthCategory, @SizeCategory, @Price, @Status, @Color, @MSRP, @Banner
                 )";
             
             using var command = new SqlCommand(query, connection);
@@ -472,6 +472,7 @@ namespace flatt_functions
             command.Parameters.AddWithValue("@Status", vehicle.Status!);
             command.Parameters.AddWithValue("@Color", vehicle.Color!);
             command.Parameters.AddWithValue("@MSRP", (object?)vehicle.Msrp ?? DBNull.Value);
+            command.Parameters.AddWithValue("@Banner", (object?)vehicle.Banner ?? DBNull.Value);
             
             var newId = await command.ExecuteScalarAsync();
             return newId != null ? (int)newId : 0;
@@ -506,6 +507,7 @@ namespace flatt_functions
         public string? Status { get; set; }
         public string? Description { get; set; }
         public string? Color { get; set; }
+        public string? Banner { get; set; }
     }
 
     public class FlexibleIntConverter : JsonConverter<int?>
