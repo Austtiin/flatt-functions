@@ -5,6 +5,7 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
 using System;
@@ -47,7 +48,8 @@ namespace flatt_functions
         {
             var stopwatch = Stopwatch.StartNew();
             var response = req.CreateResponse();
-            
+            var ct = req.FunctionContext.CancellationToken;
+
             try
             {
                 _logger.LogInformation("➕ AddInventory function started - Request ID: {requestId}", Guid.NewGuid());
@@ -137,53 +139,64 @@ namespace flatt_functions
                     return response;
                 }
                 
-                // Check if VIN already exists
-                var vinExists = await CheckVinExists(newVehicle.Vin!);
-                if (vinExists)
+                // Use a single connection for the existence checks and insert.
+                using var connection = new SqlConnection(_connectionString);
+                await connection.OpenAsync(ct);
+
+                // Pre-flight existence checks for friendly, field-specific 409s.
+                // These race against concurrent inserts, so the insert below also
+                // defends against duplicates via the unique-violation catch.
+                if (await CheckVinExists(connection, newVehicle.Vin!, ct))
                 {
                     _logger.LogWarning("⚠️ VIN already exists: {vin}", newVehicle.Vin);
-                    response.StatusCode = HttpStatusCode.Conflict;
-                    response.Headers.Add("Content-Type", "application/json; charset=utf-8");
-                    
-                    await response.WriteStringAsync(JsonSerializer.Serialize(new
+                    await FunctionHelpers.WriteJsonAsync(response, HttpStatusCode.Conflict, new
                     {
                         Error = true,
                         Message = $"VIN '{newVehicle.Vin}' already exists in inventory",
                         Field = "vin",
                         StatusCode = 409
-                    }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true }));
-                    
+                    }, ct);
                     return response;
                 }
-                
+
                 // After confirming VIN availability, create a VIN folder in blob storage (best-effort)
                 await TryCreateVinFolderAsync(newVehicle.Vin!);
-                
+
                 // Check if StockNo already exists (if provided)
-                if (!string.IsNullOrWhiteSpace(newVehicle.StockNo))
+                if (!string.IsNullOrWhiteSpace(newVehicle.StockNo) &&
+                    await CheckStockNoExists(connection, newVehicle.StockNo, ct))
                 {
-                    var stockNoExists = await CheckStockNoExists(newVehicle.StockNo);
-                    if (stockNoExists)
+                    _logger.LogWarning("⚠️ StockNo already exists: {stockNo}", newVehicle.StockNo);
+                    await FunctionHelpers.WriteJsonAsync(response, HttpStatusCode.Conflict, new
                     {
-                        _logger.LogWarning("⚠️ StockNo already exists: {stockNo}", newVehicle.StockNo);
-                        response.StatusCode = HttpStatusCode.Conflict;
-                        response.Headers.Add("Content-Type", "application/json; charset=utf-8");
-                        
-                        await response.WriteStringAsync(JsonSerializer.Serialize(new
-                        {
-                            Error = true,
-                            Message = $"Stock Number '{newVehicle.StockNo}' already exists in inventory",
-                            Field = "stockNo",
-                            StatusCode = 409
-                        }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true }));
-                        
-                        return response;
-                    }
+                        Error = true,
+                        Message = $"Stock Number '{newVehicle.StockNo}' already exists in inventory",
+                        Field = "stockNo",
+                        StatusCode = 409
+                    }, ct);
+                    return response;
                 }
-                
-                // Insert vehicle into database
-                var newUnitId = await InsertVehicle(newVehicle);
-                
+
+                // Insert vehicle into database. A unique constraint on VIN/StockNo may
+                // still trip here if a concurrent request inserted the same value between
+                // the check above and now (2627 = unique constraint, 2601 = unique index).
+                int newUnitId;
+                try
+                {
+                    newUnitId = await InsertVehicle(connection, newVehicle, ct);
+                }
+                catch (SqlException sqlEx) when (sqlEx.Number == 2627 || sqlEx.Number == 2601)
+                {
+                    _logger.LogWarning("⚠️ Duplicate VIN/StockNo detected on insert: {message}", sqlEx.Message);
+                    await FunctionHelpers.WriteJsonAsync(response, HttpStatusCode.Conflict, new
+                    {
+                        Error = true,
+                        Message = "A vehicle with this VIN or Stock Number already exists in inventory",
+                        StatusCode = 409
+                    }, ct);
+                    return response;
+                }
+
                 stopwatch.Stop();
                 
                 _logger.LogInformation("✅ Vehicle added successfully - UnitID: {unitId}, VIN: {vin}, StockNo: {stockNo}, Color: {color}", 
@@ -409,39 +422,28 @@ namespace flatt_functions
             return errors;
         }
 
-        private async Task<bool> CheckVinExists(string vin)
+        private static async Task<bool> CheckVinExists(SqlConnection connection, string vin, CancellationToken ct)
         {
-            using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync();
-            
             var query = "SELECT COUNT(*) FROM [Units] WHERE [VIN] = @VIN";
             using var command = new SqlCommand(query, connection);
             command.Parameters.AddWithValue("@VIN", vin);
-            
-            var result = await command.ExecuteScalarAsync();
-            var count = result != null ? (int)result : 0;
-            return count > 0;
+
+            var result = await command.ExecuteScalarAsync(ct);
+            return result != null && Convert.ToInt32(result) > 0;
         }
 
-        private async Task<bool> CheckStockNoExists(string stockNo)
+        private static async Task<bool> CheckStockNoExists(SqlConnection connection, string stockNo, CancellationToken ct)
         {
-            using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync();
-            
             var query = "SELECT COUNT(*) FROM [Units] WHERE [StockNo] = @StockNo";
             using var command = new SqlCommand(query, connection);
             command.Parameters.AddWithValue("@StockNo", stockNo);
-            
-            var result = await command.ExecuteScalarAsync();
-            var count = result != null ? (int)result : 0;
-            return count > 0;
+
+            var result = await command.ExecuteScalarAsync(ct);
+            return result != null && Convert.ToInt32(result) > 0;
         }
 
-        private async Task<int> InsertVehicle(AddVehicleRequest vehicle)
+        private static async Task<int> InsertVehicle(SqlConnection connection, AddVehicleRequest vehicle, CancellationToken ct)
         {
-            using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync();
-            
             var query = @"
                 INSERT INTO [Units] (
                     [VIN], [StockNo], [Make], [Model], [Year], [Condition], 
@@ -473,9 +475,9 @@ namespace flatt_functions
             command.Parameters.AddWithValue("@Color", vehicle.Color!);
             command.Parameters.AddWithValue("@MSRP", (object?)vehicle.Msrp ?? DBNull.Value);
             command.Parameters.AddWithValue("@Banner", (object?)vehicle.Banner ?? DBNull.Value);
-            
-            var newId = await command.ExecuteScalarAsync();
-            return newId != null ? (int)newId : 0;
+
+            var newId = await command.ExecuteScalarAsync(ct);
+            return newId != null ? Convert.ToInt32(newId) : 0;
         }
     }
 

@@ -109,6 +109,86 @@ namespace flatt_functions
             }
         }
 
+        // GET /inventory/{stockNo}/images -> list image names and urls, looked up by StockNo
+        [Function("ListUnitImagesByStockNo")]
+        public async Task<HttpResponseData> ListByStockNo(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "inventory/{stockNo}/images")] HttpRequestData req,
+            string stockNo)
+        {
+            var res = req.CreateResponse();
+            AddCors(res);
+            if (IsBlobDisabled())
+            {
+                res.StatusCode = HttpStatusCode.ServiceUnavailable;
+                res.Headers.Add("Content-Type", "application/json; charset=utf-8");
+                await res.WriteStringAsync(JsonSerializer.Serialize(new { ok = false, message = "Blob storage is disabled in development." }));
+                return res;
+            }
+            try
+            {
+                if (string.IsNullOrWhiteSpace(stockNo))
+                {
+                    return await BadRequest(res, "Stock number is required.");
+                }
+
+                // StockNo is stored normalized (uppercase, trimmed) on insert.
+                var normalizedStockNo = stockNo.Trim().ToUpperInvariant();
+
+                // Resolve the VIN, since images are stored under the VIN folder.
+                var vin = await GetVinForStockNo(normalizedStockNo);
+                if (string.IsNullOrWhiteSpace(vin))
+                {
+                    return await NotFound(res, $"Stock number '{normalizedStockNo}' not found");
+                }
+
+                var container = ResolveContainerClient();
+                if (container == null)
+                {
+                    return await Error(res, "Blob storage not configured");
+                }
+
+                var basePrefix = GetBlobPathPrefix();
+                var prefix = basePrefix + vin + "/";
+
+                var items = new System.Collections.Generic.List<object>();
+                await foreach (var blob in container.GetBlobsAsync(prefix: prefix))
+                {
+                    var fullName = blob.Name;
+                    var fileName = fullName.Substring(prefix.Length);
+                    // Skip hidden/placeholder blobs like .init or any name starting with a dot
+                    if (string.IsNullOrWhiteSpace(fileName) || fileName.StartsWith(".", StringComparison.Ordinal))
+                        continue;
+                    var url = BuildPublicUrl(container, fullName, fileName, vin);
+                    items.Add(new { name = fileName, url });
+                }
+
+                // Sort by numeric filename if possible
+                var sorted = items
+                    .Select(x => (dynamic)x)
+                    .OrderBy(x => TryExtractLeadingInt(x.name))
+                    .ThenBy(x => x.name)
+                    .ToArray();
+
+                res.StatusCode = HttpStatusCode.OK;
+                res.Headers.Add("Content-Type", "application/json; charset=utf-8");
+                // Cache image listings for 10 minutes
+                res.Headers.Add("Cache-Control", "public, max-age=600, s-maxage=600");
+                await res.WriteStringAsync(JsonSerializer.Serialize(new
+                {
+                    stockNo = normalizedStockNo,
+                    vin,
+                    count = sorted.Length,
+                    images = sorted
+                }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+                return res;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "List images by StockNo failed for {stockNo}", stockNo);
+                return await Error(res, ex.Message);
+            }
+        }
+
         // GET /units/{id:int}/images/{name} -> redirect to blob (or stream)
         [Function("GetUnitImage")]
         public async Task<HttpResponseData> Get(
@@ -495,6 +575,17 @@ namespace flatt_functions
             var query = "SELECT [VIN] FROM [Units] WHERE [UnitID] = @UnitID";
             using var cmd = new SqlCommand(query, connection);
             cmd.Parameters.AddWithValue("@UnitID", unitId);
+            var result = await cmd.ExecuteScalarAsync();
+            return result as string;
+        }
+
+        private async Task<string?> GetVinForStockNo(string stockNo)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+            var query = "SELECT TOP (1) [VIN] FROM [Units] WHERE [StockNo] = @StockNo";
+            using var cmd = new SqlCommand(query, connection);
+            cmd.Parameters.AddWithValue("@StockNo", stockNo);
             var result = await cmd.ExecuteScalarAsync();
             return result as string;
         }

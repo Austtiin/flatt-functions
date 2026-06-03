@@ -17,6 +17,7 @@ This document provides a comprehensive list of all API endpoints with expected i
 8. [Unit Features Endpoints](#unit-features-endpoints)
 9. [Image Management Endpoints](#image-management-endpoints)
 10. [Inquiry Email Endpoint](#inquiry-email-endpoint)
+11. [SMS Opt-In & Messaging Endpoints](#sms-opt-in--messaging-endpoints)
 
 ---
 
@@ -262,6 +263,122 @@ This document provides a comprehensive list of all API endpoints with expected i
   "statusCode": 409
 }
 ```
+
+---
+
+## SMS Opt-In & Messaging Endpoints
+
+### 11. Create/Refresh Phone Opt-In Request
+**Purpose:** Create a new phone record or refresh an existing opt-in request while preventing duplicate phone inserts
+
+**Endpoint:** `POST /sms/opt-in`
+
+**Request Body:**
+```json
+{
+  "phoneNumber": "(651) 555-1234",
+  "optInRequest": true,
+  "leadFrom": "website"
+}
+```
+
+**Behavior:**
+- Normalizes phone number to digits before lookup.
+- If phone exists, reuses existing `PhoneId`.
+- If not opted in yet, queues outbound message in `Messages` table:
+  - `Please opt in for messages from Forest Lake Auto Truck & Trailer. Reply 'YES' to confirm; data rates may apply. Reply STOP to unsubscribe.`
+
+**Success Response:**
+```json
+{
+  "success": true,
+  "phoneId": 42,
+  "existingPhoneRecord": true,
+  "phoneNumber": "6515551234",
+  "smsOptInRequested": true,
+  "smsOptInConfirmed": false,
+  "status": "Pending",
+  "leadFrom": "website",
+  "message": "Phone opt-in request recorded. Confirmation prompt queued."
+}
+```
+
+### 12. Queue Outbound SMS (Opt-In Aware)
+**Purpose:** Centralized outbound SMS endpoint that always checks opt-in state first
+
+**Endpoint:** `POST /sms/send`
+
+**Request Body:**
+```json
+{
+  "phoneNumber": "6515551234",
+  "messageText": "Your unit is ready for pickup.",
+  "leadFrom": "sales-team"
+}
+```
+
+**Behavior:**
+- If `SmsOptInConfirmed` is not true or status is not `Active`, business message is blocked and opt-in prompt is queued instead.
+- If opted in and `Active`, business message is queued.
+- All outbound rows are recorded in `Messages` with `DeliveryStatus = 'Queued'`.
+
+### 13. Process Inbound SMS Reply
+**Purpose:** Apply YES/STOP subscription logic and log inbound/outbound events
+
+**Endpoint:** `POST /sms/reply`
+
+**Request Body:**
+```json
+{
+  "phoneNumber": "6515551234",
+  "messageText": "YES"
+}
+```
+
+**Behavior:**
+- Always logs inbound row to `Messages` (`Direction = 'Inbound'`, `DeliveryStatus = 'Received'`).
+- `YES` or `Y`:
+  - `SmsOptInConfirmed = true`
+  - `OptInConfirmedDate = UTC now`
+  - `Status = 'Active'`
+- `STOP`, `UNSUBSCRIBE`, `CANCEL`, `END`, `QUIT`:
+  - `SmsOptInConfirmed = false`
+  - `OptInConfirmedDate = NULL`
+  - `Status = 'Stopped'`
+
+### 14. Dispatch Queued SMS Through Azure Communication Services
+**Purpose:** Send queued outbound SMS rows via Azure Communication Services and update delivery status
+
+**Endpoint:** `POST /sms/dispatch`
+
+**Auth:** Function key required (`AuthorizationLevel.Function`)
+
+**Request Body (optional):**
+```json
+{
+  "maxBatchSize": 25
+}
+```
+
+**Required App Settings:**
+- `SmsConnectionString`
+- `SmsFromNumber`
+
+**Behavior:**
+- Reads queued outbound messages from `Messages`.
+- Claims each row by switching status `Queued -> Sending`.
+- Sends SMS through ACS.
+- Updates delivery state to `Sent` or `Failed`.
+
+### Trigger Model (No Self-Calling Required)
+You do **not** want a function recursively calling itself.
+
+Recommended model:
+1. Business/API functions insert outbound rows into `Messages` as `Queued`.
+2. A separate dispatcher function (`/sms/dispatch`) sends queued rows.
+3. Trigger dispatcher by scheduler (preferred) or secured HTTP call.
+
+This keeps messaging reliable, avoids recursion, and gives you clear delivery auditing in the DB.
 
 ### 7. Update Vehicle
 **Purpose:** Update an existing vehicle in inventory
