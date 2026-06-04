@@ -15,14 +15,14 @@ using System.Diagnostics;
 
 namespace flatt_functions
 {
-    public class SearchInventory
+    public class SearchInventoryCars
     {
-        private readonly ILogger<SearchInventory> _logger;
+        private readonly ILogger<SearchInventoryCars> _logger;
         private readonly IConfiguration _configuration;
         private readonly string _connectionString;
 
-        // Only RVs (TypeID = 1) are searchable.
-        private const int RvTypeId = 1;
+        // Only cars (TypeID = 2) are searchable here.
+        private const int CarTypeId = 2;
 
         // Type-ahead defaults: keep the result set small and fast.
         private const int DefaultLimit = 5;
@@ -30,16 +30,16 @@ namespace flatt_functions
         private const int MinLimit = 3;
         private const int MinQueryLength = 2;
 
-        public SearchInventory(ILogger<SearchInventory> logger, IConfiguration configuration)
+        public SearchInventoryCars(ILogger<SearchInventoryCars> logger, IConfiguration configuration)
         {
             _logger = logger;
             _configuration = configuration;
             _connectionString = FunctionHelpers.ResolveConnectionString(configuration);
         }
 
-        [Function("SearchInventory")]
+        [Function("SearchInventoryCars")]
         public async Task<HttpResponseData> Run(
-            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "search")] HttpRequestData req)
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "search-cars")] HttpRequestData req)
         {
             var stopwatch = Stopwatch.StartNew();
             var response = req.CreateResponse();
@@ -47,7 +47,7 @@ namespace flatt_functions
 
             try
             {
-                _logger.LogInformation("🔎 SearchInventory function started - Request ID: {requestId}", Guid.NewGuid());
+                _logger.LogInformation("🔎 SearchInventoryCars function started - Request ID: {requestId}", Guid.NewGuid());
 
                 FunctionHelpers.AddCors(response, "GET, OPTIONS");
                 // Short cache so rapid keystrokes for the same term can be reused
@@ -76,13 +76,13 @@ namespace flatt_functions
                     return response;
                 }
 
-                _logger.LogInformation("🔍 Searching inventory for term '{term}' (limit {limit})", term, limit);
+                _logger.LogInformation("🔍 Searching car inventory for term '{term}' (limit {limit})", term, limit);
 
                 var dataTimer = Stopwatch.StartNew();
-                var results = await SearchUnits(term, limit, ct);
+                var results = await SearchCars(term, limit, ct);
                 dataTimer.Stop();
 
-                _logger.LogInformation("✅ Search for '{term}' returned {count} matches in {ms}ms",
+                _logger.LogInformation("✅ Car search for '{term}' returned {count} matches in {ms}ms",
                     term, results.Count, dataTimer.ElapsedMilliseconds);
 
                 await FunctionHelpers.WriteJsonAsync(response, HttpStatusCode.OK, new
@@ -94,14 +94,14 @@ namespace flatt_functions
                 }, ct);
 
                 stopwatch.Stop();
-                _logger.LogInformation("🎉 Search completed in {totalMs}ms", stopwatch.ElapsedMilliseconds);
+                _logger.LogInformation("🎉 Car search completed in {totalMs}ms", stopwatch.ElapsedMilliseconds);
 
                 return response;
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
-                _logger.LogError(ex, "❌ Error in SearchInventory after {ms}ms - {errorType}: {message}",
+                _logger.LogError(ex, "❌ Error in SearchInventoryCars after {ms}ms - {errorType}: {message}",
                     stopwatch.ElapsedMilliseconds, ex.GetType().Name, ex.Message);
 
                 await FunctionHelpers.WriteErrorAsync(response, HttpStatusCode.InternalServerError,
@@ -110,7 +110,7 @@ namespace flatt_functions
             }
         }
 
-        private async Task<List<SearchResult>> SearchUnits(string term, int limit, CancellationToken ct)
+        private async Task<List<SearchResult>> SearchCars(string term, int limit, CancellationToken ct)
         {
             var timer = Stopwatch.StartNew();
             var results = new List<SearchResult>();
@@ -124,7 +124,7 @@ namespace flatt_functions
             var contains = "%" + escaped + "%"; // matches that CONTAIN the term anywhere
 
             // Relevance ranking:
-            //   1 = StockNo / VIN exact-ish prefix (someone typing an identifier)
+            //   1 = StockNo / VIN prefix (someone typing an identifier)
             //   2 = Make/Model/Year starts with the term
             //   3 = term appears anywhere in the searchable fields
             // Lower rank sorts first; ties break by newest unit.
@@ -162,7 +162,7 @@ namespace flatt_functions
 
             using var command = new SqlCommand(query, connection);
             command.Parameters.AddWithValue("@Limit", limit);
-            command.Parameters.AddWithValue("@TypeID", RvTypeId);
+            command.Parameters.AddWithValue("@TypeID", CarTypeId);
             command.Parameters.AddWithValue("@Prefix", prefix);
             command.Parameters.AddWithValue("@Contains", contains);
             command.CommandTimeout = 15;
@@ -198,21 +198,5 @@ namespace flatt_functions
             timer.Stop();
             return results;
         }
-    }
-
-    public class SearchResult
-    {
-        public int UnitID { get; set; }
-        public string? Label { get; set; }
-        public string? StockNo { get; set; }
-        public string? VIN { get; set; }
-        public string? Make { get; set; }
-        public string? Model { get; set; }
-        public int? Year { get; set; }
-        public int? Mileage { get; set; }
-        public decimal? Price { get; set; }
-        public string? Condition { get; set; }
-        public string? Category { get; set; }
-        public string? Status { get; set; }
     }
 }

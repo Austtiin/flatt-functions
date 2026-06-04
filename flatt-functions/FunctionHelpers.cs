@@ -43,6 +43,33 @@ namespace flatt_functions
             return connectionString;
         }
 
+        /// <summary>
+        /// Resolves the public blob base URL (may include CDN host and path prefix) from the
+        /// configuration shapes the app uses. Returns null when blob storage isn't configured.
+        /// </summary>
+        public static string? ResolveBlobBaseUrl(IConfiguration configuration)
+        {
+            return configuration["BlobBaseURL"] ??
+                   configuration["Blob_URL"] ??
+                   configuration.GetConnectionString("BlobBaseURL") ??
+                   configuration.GetConnectionString("Blob_URL") ??
+                   configuration["ConnectionStrings:BlobBaseURL"] ??
+                   configuration["ConnectionStrings:Blob_URL"];
+        }
+
+        /// <summary>
+        /// Builds the convention-based first-image thumbnail URL ({baseUrl}/{VIN}/1.webp).
+        /// Mirrors the layout used by the Images functions (uploads are stored as sequential .webp).
+        /// Returns null when the base URL or VIN is missing.
+        /// </summary>
+        public static string? BuildThumbnailUrl(string? baseUrl, string? vin)
+        {
+            if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(vin))
+                return null;
+
+            return baseUrl!.TrimEnd('/') + "/" + vin!.Trim() + "/1.webp";
+        }
+
         /// <summary>Adds the standard permissive CORS headers (including OPTIONS preflight support).</summary>
         public static void AddCors(HttpResponseData response, string methods = "GET, POST, OPTIONS")
         {

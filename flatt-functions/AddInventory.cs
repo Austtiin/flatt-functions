@@ -211,6 +211,7 @@ namespace flatt_functions
                     Make = newVehicle.Make,
                     Model = newVehicle.Model,
                     Year = newVehicle.Year,
+                    Mileage = newVehicle.Mileage,
                     Condition = newVehicle.Condition,
                     Description = newVehicle.Description,
                     Category = newVehicle.Category,
@@ -412,7 +413,10 @@ namespace flatt_functions
             
             if (vehicle.Msrp != null && vehicle.Msrp < 0)
                 errors.Add("MSRP must be a positive number if provided");
-            
+
+            if (vehicle.Mileage != null && vehicle.Mileage < 0)
+                errors.Add("Mileage must be a positive number if provided");
+
             if (string.IsNullOrWhiteSpace(vehicle.Status))
                 errors.Add("Status is required");
             
@@ -446,14 +450,14 @@ namespace flatt_functions
         {
             var query = @"
                 INSERT INTO [Units] (
-                    [VIN], [StockNo], [Make], [Model], [Year], [Condition], 
-                    [Description], [Category], [TypeID], 
+                    [VIN], [StockNo], [Make], [Model], [Year], [Mileage], [Condition],
+                    [Description], [Category], [TypeID],
                     [WidthCategory], [SizeCategory], [Price], [Status], [Color], [MSRP], [Banner]
                 )
                 OUTPUT INSERTED.UnitID
                 VALUES (
-                    @VIN, @StockNo, @Make, @Model, @Year, @Condition, 
-                    @Description, @Category, @TypeID, 
+                    @VIN, @StockNo, @Make, @Model, @Year, @Mileage, @Condition,
+                    @Description, @Category, @TypeID,
                     @WidthCategory, @SizeCategory, @Price, @Status, @Color, @MSRP, @Banner
                 )";
             
@@ -463,6 +467,7 @@ namespace flatt_functions
             command.Parameters.AddWithValue("@Make", vehicle.Make!);
             command.Parameters.AddWithValue("@Model", vehicle.Model!);
             command.Parameters.AddWithValue("@Year", vehicle.Year!);
+            command.Parameters.AddWithValue("@Mileage", (object?)vehicle.Mileage ?? DBNull.Value);
             command.Parameters.AddWithValue("@Condition", (object?)vehicle.Condition ?? DBNull.Value);
             command.Parameters.AddWithValue("@Description", (object?)vehicle.Description ?? DBNull.Value);
             
@@ -487,10 +492,14 @@ namespace flatt_functions
         
         [JsonConverter(typeof(FlexibleIntConverter))]
         public int? Year { get; set; }
-        
+
         public string? Make { get; set; }
         public string? Model { get; set; }
         public string? StockNo { get; set; }
+
+        [JsonConverter(typeof(FlexibleIntConverter))]
+        public int? Mileage { get; set; }
+
         public string? Condition { get; set; }
         public string? Category { get; set; }
         

@@ -281,7 +281,10 @@ namespace flatt_functions
 
             if (vehicle.Msrp != null && vehicle.Msrp < 0)
                 errors.Add("MSRP must be a positive number");
-            
+
+            if (vehicle.Mileage != null && vehicle.Mileage < 0)
+                errors.Add("Mileage must be a positive number");
+
             return errors;
         }
 
@@ -371,7 +374,13 @@ namespace flatt_functions
                 setClauses.Add("[Year] = @Year");
                 command.Parameters.AddWithValue("@Year", vehicle.Year);
             }
-            
+
+            if (vehicle.Mileage != null)
+            {
+                setClauses.Add("[Mileage] = @Mileage");
+                command.Parameters.AddWithValue("@Mileage", vehicle.Mileage);
+            }
+
             if (vehicle.Condition != null)
             {
                 setClauses.Add("[Condition] = @Condition");
@@ -478,9 +487,13 @@ namespace flatt_functions
         public string? Make { get; set; }
         public string? Model { get; set; }
         public string? StockNo { get; set; }
+
+        [JsonConverter(typeof(FlexibleIntConverter))]
+        public int? Mileage { get; set; }
+
         public string? Condition { get; set; }
         public string? Category { get; set; }
-        
+
         [JsonConverter(typeof(FlexibleIntConverter))]
         public int? TypeId { get; set; }
         
